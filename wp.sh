@@ -19,64 +19,7 @@ run_task() {
     local command=$@
     
     printf "${C_CYAN}  -> ${description}...${C_RESET}"
-    output=$($comman    # ...existing code...
-    
-    run_task() {
-        local description=$1
-        shift
-        local command="$@"
-    
-        printf "${C_CYAN}  -> ${description}...${C_RESET}"
-        output=$(eval "$command" 2>&1)
-        if [ $? -eq 0 ]; then
-            printf " ${C_GREEN}[OK]${C_RESET}\n"
-        else
-            printf " ${C_RED}[GAGAL]${C_RESET}\n"
-            print_error "Detail: $output"
-            exit 1
-        fi
-    }
-    
-    install_new_website() {
-        print_info "Memulai proses instalasi website WordPress baru yang dioptimasi."
-    
-        while true; do
-            read -p "$(echo -e ${C_YELLOW}'Masukkan nama domain (contoh: domain.com): '${C_RESET})" domain
-            [[ "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,63}$ ]] && break || print_error "Format domain tidak valid."
-        done
-    
-        # ...existing code...
-    
-        run_task "Mengaktifkan site Nginx" "[[ -L /etc/nginx/sites-enabled/$domain ]] || sudo ln -s /etc/nginx/sites-available/$domain /etc/nginx/sites-enabled/"
-    
-        # ...existing code...
-    
-        print_info "Menjalankan Certbot untuk mendapatkan sertifikat SSL..."
-        run_task "Menguji konfigurasi Nginx" "sudo nginx -t"
-        run_task "Reload Nginx" "sudo systemctl reload nginx"
-        run_task "Menjalankan Certbot" "sudo certbot --nginx --agree-tos --redirect --hsts --staple-ocsp --email admin@$domain -d $domain,www.$domain"
-    
-        # ...existing code...
-    }
-    
-    list_websites() {
-        print_info "Mencari website yang dikelola oleh Nginx..."
-        local sites_dir="/etc/nginx/sites-enabled"
-    
-        if [ -d "$sites_dir" ] && [ "$(ls -A $sites_dir)" ]; then
-            echo -e "${C_BOLD}---------------------------------------------${C_RESET}"
-            for site in $(ls $sites_dir); do
-                if [ "$site" != "default" ] && [ -f "$sites_dir/$site" ]; then
-                    echo -e "  - ${C_GREEN}$site${C_RESET} (https://$site)"
-                fi
-            done
-            echo -e "${C_BOLD}---------------------------------------------${C_RESET}"
-        else
-            print_warning "Tidak ada website yang ditemukan."
-        fi
-    }
-    
-    # ...existing code...d 2>&1)
+    output=$($command 2>&1)
     if [ $? -eq 0 ]; then
         printf " ${C_GREEN}[OK]${C_RESET}\n"
     else
