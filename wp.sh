@@ -154,8 +154,8 @@ add_website() {
     run_task "Membuat database '$dbname' dan user '$dbuser'" mysql -u root -p"$mariadb_unified_pass" -e "CREATE DATABASE $dbname; CREATE USER '$dbuser'@'localhost' IDENTIFIED BY '$mariadb_unified_pass'; GRANT ALL PRIVILEGES ON $dbname.* TO '$dbuser'@'localhost'; FLUSH PRIVILEGES;"
     run_task "Membuat direktori website" mkdir -p "$web_root"
     run_task "Menyesuaikan izin direktori" chown -R www-data:www-data "/var/www/$domain"
-    run_task "Mengunduh file inti WordPress" sudo -u www-data wp core download --path="$web_root"
-    run_task "Membuat file wp-config.php" sudo -u www-data wp config create --path="$web_root" --dbname="$dbname" --dbuser="$dbuser" --dbpass="$mariadb_unified_pass" --extra-php <<< "define('WP_CACHE', true); define('WP_REDIS_HOST', '127.0.0.1'); define('WP_REDIS_PORT', 6379);"
+    run_task "Mengunduh file inti WordPress" sudo -u www-data --set-home wp core download --path="$web_root"
+    run_task "Membuat file wp-config.php" sudo -u www-data --set-home wp config create --path="$web_root" --dbname="$dbname" --dbuser="$dbuser" --dbpass="$mariadb_unified_pass" --extra-php <<< "define('WP_CACHE', true); define('WP_REDIS_HOST', '127.0.0.1'); define('WP_REDIS_PORT', 6379);"
 
     echo -e " ${S_INFO}  Anda perlu menyediakan sertifikat SSL untuk HTTPS."
     local ssl_dir="/etc/nginx/ssl/$domain" && mkdir -p "$ssl_dir"
@@ -215,9 +215,9 @@ EOF
     read -p "  ${S_INPUT}  Username Admin: " admin_user
     read -s -p "  ${S_INPUT}  Password Admin: " admin_password; echo
     read -p "  ${S_INPUT}  Email Admin: " admin_email
-    run_task "Menyelesaikan instalasi WordPress" sudo -u www-data wp core install --path="$web_root" --url="https://$domain" --title="$site_title" --admin_user="$admin_user" --admin_password="$admin_password" --admin_email="$admin_email"
-    run_task "Menginstal plugin-plugin" sudo -u www-data wp plugin install redis-cache wp-file-manager crawlwp-seo disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root"
-    run_task "Mengaktifkan Redis Object Cache" sudo -u www-data wp redis enable --path="$web_root"
+    run_task "Menyelesaikan instalasi WordPress" sudo -u www-data --set-home wp core install --path="$web_root" --url="https://$domain" --title="$site_title" --admin_user="$admin_user" --admin_password="$admin_password" --admin_email="$admin_email"
+    run_task "Menginstal plugin-plugin" sudo -u www-data --set-home wp plugin install redis-cache wp-file-manager instant-indexing-api disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root"
+    run_task "Mengaktifkan Redis Object Cache" sudo -u www-data --set-home wp redis enable --path="$web_root"
 
     echo -e "${C_GREEN}╭─[ Instalasi Selesai ]──────────────────────────────────╮"
     echo -e "│                                                         │"
@@ -283,19 +283,17 @@ show_menu() {
     local term_width=$(tput cols)
     local title=" PENGELOLA SERVER WORDPRESS "
     local title_len=${#title}
-    local padding_len=$(( (term_width - title_len) / 2 ))
+    local padding_len=$(( (term_width - title_len - 2) / 2 ))
     local padding=""
-    for (( i=0; i<padding_len; i++ )); do padding+="="; done
+    for (( i=0; i<padding_len; i++ )); do padding+="─"; done
 
-    echo -e "${C_BOLD}${C_BLUE}$padding$title$padding${C_RESET}"
-    echo -e "${C_DIM} Didesain ulang oleh Gemini untuk pengalaman yang modern.${C_RESET}"
-    echo ""
+    echo -e "${C_BOLD}${C_BLUE}╭${padding}${title}${padding}╮${C_RESET}"
     echo -e "   ${C_CYAN}[1]${C_RESET}  Setup Server Awal      ${C_GRAY}› Instal dependensi inti (Nginx, PHP, dll)${C_RESET}"
     echo -e "   ${C_CYAN}[2]${C_RESET}  Tambah Website Baru    ${C_GRAY}› Buat instalasi WordPress yang baru${C_RESET}"
     echo -e "   ${C_CYAN}[3]${C_RESET}  Lihat Daftar Website   ${C_GRAY}› Tampilkan semua website yang terpasang${C_RESET}"
     echo -e "   ${C_CYAN}[4]${C_RESET}  Hapus Website          ${C_GRAY}› Hapus website, database, dan konfigurasinya${C_RESET}"
     echo -e "   ${C_CYAN}[5]${C_RESET}  Keluar                 ${C_GRAY}› Tutup skrip ini${C_RESET}"
-    echo ""
+    echo -e "${C_BOLD}${C_BLUE}╰${padding}──────────────────${padding}╯${C_RESET}"
 }
 
 main() {
