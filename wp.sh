@@ -69,79 +69,40 @@ load_or_create_password() {
 
 setup_server() {
   log "header" "MEMULAI SETUP SERVER"
-  log "info" "Memeriksa dan menginstal dependensi yang dibutuhkan..."
-
-  run_task "Memperbarui daftar paket" apt-get update -y
-
-  if ! dpkg -s software-properties-common &> /dev/null; then
-      run_task "Menginstal software-properties-common" apt-get install -y software-properties-common
-  else
-      log "info" "Paket software-properties-common sudah terinstal."
-  fi
-
-  if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-      log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
-      run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php
-      run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y
-  else
-      log "info" "PPA ondrej/php sudah ada."
-  fi
-  
-  local packages_needed=(
-    nginx mariadb-server mariadb-client unzip curl wget fail2ban redis-server 
-    php8.3-fpm php8.3-mysql php8.3-xml php8.3-curl php8.3-gd php8.3-imagick 
-    php8.3-mbstring php8.3-zip php8.3-intl php8.3-bcmath php8.3-redis
-  )
-  local packages_to_install=()
-  for pkg in "${packages_needed[@]}"; do
-    if ! dpkg -s "$pkg" &> /dev/null; then
-      packages_to_install+=("$pkg")
-    fi
-  done
-
-  if [ ${#packages_to_install[@]} -gt 0 ]; then
-    log "info" "Menginstal paket inti yang belum ada..."
-    run_task "Menginstal paket: ${packages_to_install[*]}" apt-get install -y "${packages_to_install[@]}"
-  else
-    log "info" "Semua paket inti sudah terinstal."
-  fi
-
-  if ! command -v wp &> /dev/null; then
-    log "info" "Menginstal WP-CLI..."
-    run_task "Mengunduh WP-CLI phar" wget -nv https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /usr/local/bin/wp
-    run_task "Memberikan izin eksekusi pada WP-CLI" chmod +x /usr/local/bin/wp
-  else
-    log "info" "WP-CLI sudah terinstal."
-  fi
-
-  log "info" "Mengonfigurasi MariaDB..."
-  if ! systemctl is-active --quiet mariadb; then
-    run_task "Mengaktifkan & memulai layanan MariaDB" systemctl enable --now mariadb.service
-  fi
+  log "info" "Proses ini akan menginstal Nginx, MariaDB, PHP 8.3, dan alat lainnya."
+  run_task "Memperbarui daftar paket & prasyarat" apt-get update -y
+  run_task "Menginstal software-properties-common & nano" apt-get install -y software-properties-common nano
+  log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
+  run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php
+  run_task "Memperbarui daftar paket lagi" apt-get update -y
+  log "info" "Menginstal paket-paket inti..."
+  run_task "Menginstal Nginx, MariaDB, PHP, Redis, Fail2ban, dll." apt-get install -y \
+    nginx mariadb-server mariadb-client \
+    unzip curl wget fail2ban \
+    redis-server php8.3-fpm php8.3-mysql php8.3-xml \
+    php8.3-curl php8.3-gd php8.3-imagick php8.3-mbstring \
+    php8.3-zip php8.3-intl php8.3-bcmath php8.3-redis
+  log "info" "Menginstal WP-CLI (WordPress Command Line Interface)..."
+  run_task "Mengunduh WP-CLI phar" wget -nv https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /usr/local/bin/wp
+  run_task "Memberikan izin eksekusi pada WP-CLI" chmod +x /usr/local/bin/wp
+  log "info" "Mengamankan dan mengonfigurasi MariaDB..."
+  run_task "Mengaktifkan & memulai layanan MariaDB" systemctl enable --now mariadb.service
   load_or_create_password
-  mysql -u root -p"$mariadb_unified_pass" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
-  
+  run_task "Mengatur kata sandi root MariaDB" mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
+  run_task "Menghapus user anonim" mysql -u root -p"$mariadb_unified_pass" -e "DELETE FROM mysql.user WHERE User='';"
+  run_task "Menghapus database 'test'" mysql -u root -p"$mariadb_unified_pass" -e "DROP DATABASE IF EXISTS test;"
+  run_task "Memuat ulang hak akses (privileges)" mysql -u root -p"$mariadb_unified_pass" -e "FLUSH PRIVILEGES;"
   log "info" "Mengonfigurasi Nginx FastCGI Caching..."
-  if [ ! -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
-    tee /etc/nginx/conf.d/fastcgi_cache.conf > /dev/null <<'EOF'
+  tee /etc/nginx/conf.d/fastcgi_cache.conf > /dev/null <<'EOF'
 fastcgi_cache_path /var/run/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
 fastcgi_cache_key "$scheme$request_method$host$request_uri";
 EOF
-    run_task "Memeriksa konfigurasi Nginx setelah menambah cache" nginx -t
-  else
-    log "info" "Konfigurasi FastCGI Cache sudah ada."
-  fi
-
+  run_task "Memeriksa konfigurasi Nginx setelah menambah cache" nginx -t
   log "info" "Mengonfigurasi Firewall (UFW)..."
-  if ! ufw status | grep -q "Status: active"; then
-    run_task "Mengizinkan koneksi SSH" ufw allow 'OpenSSH'
-    run_task "Mengizinkan koneksi Nginx" ufw allow 'Nginx Full'
-    run_task "Mengaktifkan UFW" ufw --force enable
-  else
-    log "info" "UFW sudah aktif."
-  fi
-  
-  log "success" "Setup server selesai! Semua dependensi sudah siap."
+  run_task "Mengizinkan koneksi SSH (Port 22)" ufw allow 'OpenSSH'
+  run_task "Mengizinkan koneksi Nginx (Port 80 & 443)" ufw allow 'Nginx Full'
+  run_task "Mengaktifkan UFW (mungkin memutus koneksi non-standar)" ufw --force enable
+  log "success" "Setup server selesai! Sistem siap untuk instalasi WordPress."
 }
 
 add_website() {
@@ -199,6 +160,7 @@ PHP
 
   log "header" "KONFIGURASI SSL (HTTPS)"
   echo "Anda perlu menempelkan konten sertifikat SSL dan kunci privat."
+  echo "Jika belum punya, Anda bisa mendapatkannya dari provider SSL Anda."
   read -p "Tekan ENTER untuk melanjutkan ke editor teks (nano)..."
   
   local ssl_dir="/etc/nginx/ssl/$domain"
@@ -206,11 +168,11 @@ PHP
   local ssl_cert_path="$ssl_dir/$domain.crt"
   local ssl_key_path="$ssl_dir/$domain.key"
   
-  echo -e "${C_YELLOW}Tempelkan konten sertifikat (.crt), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
+  echo -e "${C_YELLOW}Sekarang, tempelkan konten sertifikat Anda (biasanya file .crt atau .pem), lalu tekan Ctrl+X, lalu Y, lalu Enter untuk menyimpan.${C_RESET}"
   read -p "Tekan ENTER untuk membuka editor sertifikat..."
   nano "$ssl_cert_path"
 
-  echo -e "${C_YELLOW}Tempelkan konten Kunci Privat (.key), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
+  echo -e "${C_YELLOW}Selanjutnya, tempelkan konten Kunci Privat Anda (file .key), lalu tekan Ctrl+X, lalu Y, lalu Enter untuk menyimpan.${C_RESET}"
   read -p "Tekan ENTER untuk membuka editor kunci privat..."
   nano "$ssl_key_path"
 
@@ -268,7 +230,7 @@ server {
 }
 EOF
 
-  run_task "Mengaktifkan site Nginx" ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/"
+  run_task "Mengaktifkan site Nginx (membuat symlink)" ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/"
   
   log "info" "Menyelesaikan konfigurasi..."
   run_task "Menguji konfigurasi Nginx" nginx -t
@@ -282,7 +244,6 @@ EOF
   
   run_task "Menjalankan instalasi inti WordPress" sudo -u www-data wp core install --path="$web_root" --url="https://$domain" --title="$site_title" --admin_user="$admin_user" --admin_password="$admin_password" --admin_email="$admin_email"
   run_task "Menginstal & mengaktifkan plugin Redis Cache" sudo -u www-data wp plugin install redis-cache --activate --path="$web_root"
-  run_task "Menginstal & mengaktifkan plugin WP File Manager" sudo -u www-data wp plugin install wp-file-manager --activate --path="$web_root"
   run_task "Mengaktifkan Redis Object Cache" sudo -u www-data wp redis enable --path="$web_root"
   
   echo -e "${C_GREEN}=======================================================${C_RESET}"
@@ -293,13 +254,16 @@ EOF
   echo -e "-------------------------------------------------------"
   echo -e "${C_BOLD}Database Name:  ${C_CYAN}$dbname${C_RESET}"
   echo -e "${C_BOLD}Database User:  ${C_CYAN}$dbuser${C_RESET}"
+  echo -e "${C_BOLD}Database Pass:  ${C_YELLOW}(Sama dengan password root MariaDB)${C_RESET}"
   echo -e "${C_GREEN}=======================================================${C_RESET}"
   log "warn" "Pastikan Anda telah mengarahkan DNS domain Anda ke IP server ini."
 }
 
 list_websites() {
   log "header" "DAFTAR WEBSITE TERPASANG"
+  
   local sites_dir="/etc/nginx/sites-enabled"
+  
   if [ -d "$sites_dir" ] && [ "$(ls -A $sites_dir)" ]; then
     echo -e "${C_BOLD}Website yang ditemukan di konfigurasi Nginx:${C_RESET}"
     for site in $(ls -A $sites_dir); do
@@ -324,18 +288,18 @@ delete_website() {
   local web_root="/var/www/$domain"
   local nginx_conf="/etc/nginx/sites-available/$domain"
   local nginx_symlink="/etc/nginx/sites-enabled/$domain"
-  local ssl_dir="/etc/nginx/ssl/$domain"
   local dbname=$(echo "$domain" | tr '.' '_' | cut -c1-16)_wp
   local dbuser=$(echo "$domain" | tr '.' '_' | cut -c1-16)_usr
 
   log "warn" "Anda akan menghapus semua data untuk domain '$domain'."
-  log "warn" "Ini termasuk file web, database, konfigurasi Nginx, dan sertifikat SSL."
+  log "warn" "Ini termasuk file web, database, dan konfigurasi Nginx."
   
   echo ""
   echo -e "${C_YELLOW}*** PERINGATAN PENTING ***${C_RESET}"
   echo "Operasi ini akan MENGHAPUS SEMUA DATA secara permanen."
   echo "Tindakan ini TIDAK BISA DIURUNGKAN."
   read -p "Untuk konfirmasi, ketik nama domain '$domain' lalu tekan Enter: " confirmation
+
 
   if [ "$confirmation" != "$domain" ]; then
     log "info" "Konfirmasi tidak cocok. Operasi penghapusan dibatalkan."
@@ -344,17 +308,33 @@ delete_website() {
 
   log "info" "Memulai proses penghapusan untuk '$domain'..."
   
-  if [ -L "$nginx_symlink" ]; then run_task "Menghapus symlink Nginx" rm "$nginx_symlink"; fi
-  if [ -f "$nginx_conf" ]; then run_task "Menghapus konfigurasi Nginx" rm "$nginx_conf"; fi
-  run_task "Me-reload Nginx" systemctl reload nginx
-  if [ -d "$web_root" ]; then run_task "Menghapus direktori web" rm -rf "$web_root"; fi
-  if [ -d "$ssl_dir" ]; then run_task "Menghapus direktori SSL" rm -rf "$ssl_dir"; fi
+  if [ -L "$nginx_symlink" ]; then
+    run_task "Menghapus symlink Nginx" rm "$nginx_symlink"
+  else 
+    log "info" "Symlink Nginx tidak ditemukan, melewati."
+  fi
+  
+  if [ -f "$nginx_conf" ]; then
+    run_task "Menghapus konfigurasi Nginx" rm "$nginx_conf"
+  else
+    log "info" "File konfigurasi Nginx tidak ditemukan, melewati."
+  fi
+  
+  run_task "Me-reload Nginx untuk menerapkan perubahan" systemctl reload nginx
+
+  if [ -d "$web_root" ]; then
+    run_task "Menghapus direktori web '$web_root'" rm -rf "$web_root"
+  else
+    log "info" "Direktori web tidak ditemukan, melewati."
+  fi
 
   load_or_create_password
   if mysql -u root -p"$mariadb_unified_pass" -e "USE $dbname;" &>/dev/null; then
     run_task "Menghapus database '$dbname'" mysql -u root -p"$mariadb_unified_pass" -e "DROP DATABASE $dbname;"
     run_task "Menghapus user database '$dbuser'" mysql -u root -p"$mariadb_unified_pass" -e "DROP USER '$dbuser'@'localhost';"
     run_task "Memuat ulang hak akses" mysql -u root -p"$mariadb_unified_pass" -e "FLUSH PRIVILEGES;"
+  else
+    log "info" "Database tidak ditemukan, melewati."
   fi
 
   log "success" "Semua data untuk domain '$domain' telah berhasil dihapus."
