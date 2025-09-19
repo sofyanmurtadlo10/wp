@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 
 if [[ $EUID -ne 0 ]]; then
-   echo "❌ Kesalahan: Skrip ini harus dijalankan sebagai root. Coba 'sudo bash $0'" 
-   exit 1
+  echo "❌ Kesalahan: Skrip ini harus dijalankan sebagai root. Coba 'sudo bash $0'"
+  exit 1
 fi
 
 C_RESET='\e[0m'
-C_RED='\e[1;31m'    C_GREEN='\e[1;32m'
-C_YELLOW='\e[1;33m' C_BLUE='\e[1;34m'
-C_MAGENTA='\e[1;35m' C_CYAN='\e[1;36m'
+C_RED='\e[1;31m'
+C_GREEN='\e[1;32m'
+C_YELLOW='\e[1;33m'
+C_BLUE='\e[1;34m'
+C_MAGENTA='\e[1;35m'
+C_CYAN='\e[1;36m'
 C_BOLD='\e[1m'
 
 readonly password_file="mariadb_root_pass.txt"
@@ -18,11 +21,11 @@ log() {
   local type=$1
   local msg=$2
   case "$type" in
-    "info")    echo -e "${C_BLUE}INFO:${C_RESET} $msg" ;;
+    "info") echo -e "${C_BLUE}INFO:${C_RESET} $msg" ;;
     "success") echo -e "${C_GREEN}SUKSES:${C_RESET} $msg" ;;
-    "warn")    echo -e "${C_YELLOW}PERINGATAN:${C_RESET} $msg" ;;
-    "error")   echo -e "${C_RED}ERROR:${C_RESET} $msg${C_RESET}"; exit 1 ;;
-    "header")  echo -e "\n${C_BOLD}${C_MAGENTA}--- $msg ---${C_RESET}" ;;
+    "warn") echo -e "${C_YELLOW}PERINGATAN:${C_RESET} $msg" ;;
+    "error") echo -e "${C_RED}ERROR:${C_RESET} $msg${C_RESET}"; exit 1 ;;
+    "header") echo -e "\n${C_BOLD}${C_MAGENTA}--- $msg ---${C_RESET}" ;;
   esac
 }
 
@@ -74,17 +77,17 @@ setup_server() {
   run_task "Memperbarui daftar paket" apt-get update -y
 
   if ! dpkg -s software-properties-common &> /dev/null; then
-      run_task "Menginstal software-properties-common" apt-get install -y software-properties-common
+    run_task "Menginstal software-properties-common" apt-get install -y software-properties-common
   else
-      log "info" "Paket software-properties-common sudah terinstal."
+    log "info" "Paket software-properties-common sudah terinstal."
   fi
 
   if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-      log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
-      run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php
-      run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y
+    log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
+    run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php
+    run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y
   else
-      log "info" "PPA ondrej/php sudah ada."
+    log "info" "PPA ondrej/php sudah ada."
   fi
   
   local packages_needed=(
@@ -148,7 +151,7 @@ add_website() {
   log "header" "TAMBAH WEBSITE WORDPRESS BARU"
 
   if ! command -v wp &> /dev/null; then
-      log "error" "WP-CLI tidak ditemukan. Jalankan 'Setup Server' terlebih dahulu."
+    log "error" "WP-CLI tidak ditemukan. Jalankan 'Setup Server' terlebih dahulu."
   fi
   
   load_or_create_password
@@ -221,56 +224,55 @@ PHP
   log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
   tee "/etc/nginx/sites-available/$domain" > /dev/null <<EOF
 server {
-    listen 80;
-    listen [::]:80;
-    server_name $domain www.$domain;
-    return 301 https://\$host\$request_uri;
+  listen 80;
+  listen [::]:80;
+  server_name $domain www.$domain;
+  return 301 https://\$host\$request_uri;
 }
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $domain www.$domain;
-    root $web_root;
-    index index.php;
+  listen 443 ssl http2;
+  listen [::]:443 ssl http2;
+  server_name $domain www.$domain;
+  root $web_root;
+  index index.php;
 
-    # Aturan untuk Rank Math SEO
-    rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
-    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=$1&sitemap_n=$2 last;
-    rewrite ^/sitemap\.xsl$ /index.php?sitemap_xsl=1 last;
+  rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
+  rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=$1&sitemap_n=$2 last;
+  rewrite ^/sitemap\.xsl$ /index.php?sitemap_xsl=1 last;
 
-    ssl_certificate $ssl_cert_path;
-    ssl_certificate_key $ssl_key_path;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers "EECDH+AESGCM:EDH+AESGCM";
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    client_max_body_size 100M;
-    set \$skip_cache 0;
-    if (\$request_method = POST) { set \$skip_cache 1; }
-    if (\$query_string != "") { set \$skip_cache 1; }
-    if (\$request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|sitemap(_index)?.xml") { set \$skip_cache 1; }
-    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set \$skip_cache 1; }
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-        fastcgi_cache WORDPRESS;
-        fastcgi_cache_valid 200 60m;
-        fastcgi_cache_bypass \$skip_cache;
-        fastcgi_no_cache \$skip_cache;
-        add_header X-Cache-Status \$upstream_cache_status;
-    }
-    location ~* /(?:uploads|files)/.*\.php$ {
-        deny all;
-    }
-    location ~ /\.ht {
-        deny all;
-    }
+  ssl_certificate $ssl_cert_path;
+  ssl_certificate_key $ssl_key_path;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+  ssl_ciphers "EECDH+AESGCM:EDH+AESGCM";
+  add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-XSS-Protection "1; mode=block" always;
+  client_max_body_size 100M;
+  set \$skip_cache 0;
+  if (\$request_method = POST) { set \$skip_cache 1; }
+  if (\$query_string != "") { set \$skip_cache 1; }
+  if (\$request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|sitemap(_index)?.xml") { set \$skip_cache 1; }
+  if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set \$skip_cache 1; }
+  location / {
+    try_files \$uri \$uri/ /index.php?\$args;
+  }
+  location ~ \.php$ {
+    include snippets/fastcgi-php.conf;
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+    fastcgi_cache WORDPRESS;
+    fastcgi_cache_valid 200 60m;
+    fastcgi_cache_bypass \$skip_cache;
+    fastcgi_no_cache \$skip_cache;
+    add_header X-Cache-Status \$upstream_cache_status;
+  }
+  location ~* /(?:uploads|files)/.*\.php$ {
+    deny all;
+  }
+  location ~ /\.ht {
+    deny all;
+  }
 }
 EOF
 
@@ -380,7 +382,7 @@ show_menu() {
   clear
   echo -e "${C_BOLD}${C_MAGENTA}"
   echo "=========================================================="
-  echo "         🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀       "
+  echo "           🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀           "
   echo "=========================================================="
   echo -e "${C_RESET}"
   echo -e "  ${C_GREEN}1. Setup Server Awal (Hanya sekali jalan) ⚙️${C_RESET}"
