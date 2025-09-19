@@ -293,7 +293,13 @@ delete_website() {
 
   log "warn" "Anda akan menghapus semua data untuk domain '$domain'."
   log "warn" "Ini termasuk file web, database, dan konfigurasi Nginx."
-  read -p "Operasi ini ${C_RED}${C_BOLD}TIDAK BISA DIURUNGKAN${C_RESET}. Ketik '${C_RED}$domain${C_RESET}' untuk konfirmasi: " confirmation
+  
+  echo ""
+  echo -e "${C_YELLOW}*** PERINGATAN PENTING ***${C_RESET}"
+  echo "Operasi ini akan MENGHAPUS SEMUA DATA secara permanen."
+  echo "Tindakan ini TIDAK BISA DIURUNGKAN."
+  read -p "Untuk konfirmasi, ketik nama domain '$domain' lalu tekan Enter: " confirmation
+
 
   if [ "$confirmation" != "$domain" ]; then
     log "info" "Konfirmasi tidak cocok. Operasi penghapusan dibatalkan."
