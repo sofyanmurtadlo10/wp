@@ -70,14 +70,11 @@ load_or_create_password() {
 setup_server() {
   log "header" "MEMULAI SETUP SERVER"
   log "info" "Proses ini akan menginstal Nginx, MariaDB, PHP 8.3, dan alat lainnya."
-
   run_task "Memperbarui daftar paket & prasyarat" apt-get update -y
   run_task "Menginstal software-properties-common & nano" apt-get install -y software-properties-common nano
-
   log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
   run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php
   run_task "Memperbarui daftar paket lagi" apt-get update -y
-
   log "info" "Menginstal paket-paket inti..."
   run_task "Menginstal Nginx, MariaDB, PHP, Redis, Fail2ban, dll." apt-get install -y \
     nginx mariadb-server mariadb-client \
@@ -85,26 +82,26 @@ setup_server() {
     redis-server php8.3-fpm php8.3-mysql php8.3-xml \
     php8.3-curl php8.3-gd php8.3-imagick php8.3-mbstring \
     php8.3-zip php8.3-intl php8.3-bcmath php8.3-redis
-
   log "info" "Menginstal WP-CLI (WordPress Command Line Interface)..."
   run_task "Mengunduh WP-CLI phar" wget -nv https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /usr/local/bin/wp
   run_task "Memberikan izin eksekusi pada WP-CLI" chmod +x /usr/local/bin/wp
-
   log "info" "Mengamankan dan mengonfigurasi MariaDB..."
   run_task "Mengaktifkan & memulai layanan MariaDB" systemctl enable --now mariadb.service
-  
   load_or_create_password
-  
   run_task "Mengatur kata sandi root MariaDB" mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
   run_task "Menghapus user anonim" mysql -u root -p"$mariadb_unified_pass" -e "DELETE FROM mysql.user WHERE User='';"
   run_task "Menghapus database 'test'" mysql -u root -p"$mariadb_unified_pass" -e "DROP DATABASE IF EXISTS test;"
   run_task "Memuat ulang hak akses (privileges)" mysql -u root -p"$mariadb_unified_pass" -e "FLUSH PRIVILEGES;"
-
+  log "info" "Mengonfigurasi Nginx FastCGI Caching..."
+  tee /etc/nginx/conf.d/fastcgi_cache.conf > /dev/null <<'EOF'
+fastcgi_cache_path /var/run/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
+fastcgi_cache_key "$scheme$request_method$host$request_uri";
+EOF
+  run_task "Memeriksa konfigurasi Nginx setelah menambah cache" nginx -t
   log "info" "Mengonfigurasi Firewall (UFW)..."
   run_task "Mengizinkan koneksi SSH (Port 22)" ufw allow 'OpenSSH'
   run_task "Mengizinkan koneksi Nginx (Port 80 & 443)" ufw allow 'Nginx Full'
   run_task "Mengaktifkan UFW (mungkin memutus koneksi non-standar)" ufw --force enable
-
   log "success" "Setup server selesai! Sistem siap untuk instalasi WordPress."
 }
 
