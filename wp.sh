@@ -294,7 +294,7 @@ EOF
   run_task "Menginstal plugin" sudo -u www-data wp plugin install \
     redis-cache \
     wp-file-manager \
-    crawlwp-seo \
+    mihdan-index-now \
     disable-comments-rb \
     floating-ads-bottom \
     post-views-counter \
