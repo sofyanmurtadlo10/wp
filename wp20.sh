@@ -372,7 +372,7 @@ show_menu() {
     echo "           🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀           "
     echo "=========================================================="
     echo -e "${C_RESET}"
-    echo -e "  ${C_GREEN}1. Setup Server Awal (Hanya sekali jalan) ⚙️${C_RESET}"
+    echo -e "  ${C_GREEN}1. Setup Server ⚙️${C_RESET}"
     echo -e "  ${C_CYAN}2. Tambah Website WordPress Baru ➕${C_RESET}"
     echo -e "  ${C_YELLOW}3. Lihat Daftar Website Terpasang 📜${C_RESET}"
     echo -e "  ${C_RED}4. Hapus Website 🗑️${C_RESET}"
