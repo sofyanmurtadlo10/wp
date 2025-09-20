@@ -75,7 +75,8 @@ setup_server() {
     log "header" "MEMULAI SETUP SERVER UNTUK UBUNTU 20.04"
     log "info" "Memeriksa dan menginstal dependensi yang dibutuhkan..."
 
-    run_task "Memperbarui daftar paket" apt-get update -y || log "error" "Gagal memperbarui paket."
+    # Ditambahkan --allow-releaseinfo-change untuk mengatasi error label PPA
+    run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
 
     if ! dpkg -s software-properties-common &> /dev/null; then
         run_task "Menginstal software-properties-common" apt-get install -y software-properties-common || log "error" "Gagal menginstal software-properties-common."
@@ -86,7 +87,8 @@ setup_server() {
     if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
         log "info" "Menambahkan PPA PHP dari Ondrej Sury..."
         run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php || log "error" "Gagal menambah PPA PHP."
-        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y || log "error" "Gagal memperbarui paket setelah menambah PPA."
+        # Ditambahkan --allow-releaseinfo-change untuk mengatasi error label PPA
+        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket setelah menambah PPA."
     else
         log "info" "PPA ondrej/php sudah ada."
     fi
