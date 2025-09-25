@@ -7,7 +7,7 @@ fi
 
 C_RESET='\e[0m'
 C_RED='\e[1;31m'
-C_GREEN='\e[1;32m'
+C_GREEN='\e=1;32m'
 C_YELLOW='\e[1;33m'
 C_BLUE='\e[1;34m'
 C_MAGENTA='\e[1;35m'
@@ -202,13 +202,12 @@ PHP
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File sertifikat atau kunci privat kosong."; fi
 
     log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
-    # --- [START] BLOK NGINX YANG DIPERBAIKI ---
-    tee "/etc/nginx/sites-available/$domain" > /dev/null <<EOF
+    tee "/etc/nginx/sites-available/$domain" > /dev/null <<'EOF'
 server {
     listen 80;
     listen [::]:80;
     server_name $domain www.$domain;
-    return 301 https://\$host\$request_uri;
+    return 301 https://$host$request_uri;
 }
 server {
     listen 443 ssl http2;
@@ -218,7 +217,7 @@ server {
     index index.php;
 
     rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
-    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
+    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=$1&sitemap_n=$2 last;
     rewrite ^/sitemap\.xsl$ /index.php?sitemap_xsl=1 last;
 
     ssl_certificate $ssl_cert_path;
@@ -231,24 +230,13 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     client_max_body_size 100M;
 
-    set \$skip_cache 0;
-    if (\$request_method = POST) { set \$skip_cache 1; }
-    if (\$query_string != "") { set \$skip_cache 1; }
-    if (\$request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|sitemap(_index)?.xml") { set \$skip_cache 1; }
-    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set \$skip_cache 1; }
-    
     location / {
-        try_files \$uri \$uri/ /index.php?\$args;
+        try_files $uri $uri/ /index.php?$args;
     }
     
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-        fastcgi_cache WORDPRESS;
-        fastcgi_cache_valid 200 60m;
-        fastcgi_cache_bypass \$skip_cache;
-        fastcgi_no_cache \$skip_cache;
-        add_header X-Cache-Status \$upstream_cache_status;
     }
     
     location ~* /(?:uploads|files)/.*\.php$ {
@@ -260,7 +248,6 @@ server {
     }
 }
 EOF
-    # --- [END] BLOK NGINX YANG DIPERBAIKI ---
 
     run_task "Mengaktifkan site Nginx" ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || log "error"
     run_task "Menguji konfigurasi Nginx" nginx -t || log "error" "Konfigurasi Nginx tidak valid."
@@ -306,8 +293,8 @@ EOF
     echo -e "${C_GREEN}=======================================================${C_RESET}"
     log "success" "Instalasi WordPress untuk 'https://$domain' selesai! 🎉"
     echo -e "${C_BOLD}URL Login:      ${C_CYAN}https://$domain/wp-admin/${C_RESET}"
-    echo -e "${C_BOLD}Username:       ${C_CYAN}$admin_user${C_RESET}"
-    echo -e "${C_BOLD}Password:       ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
+    echo -e "${C_BOLD}Username:        ${C_CYAN}$admin_user${C_RESET}"
+    echo -e "${C_BOLD}Password:        ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
     echo -e "-------------------------------------------------------"
     echo -e "${C_BOLD}Database Name:  ${C_CYAN}$dbname${C_RESET}"
     echo -e "${C_BOLD}Database User:  ${C_CYAN}$dbuser${C_RESET}"
@@ -369,7 +356,7 @@ show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}"
     echo "=========================================================="
-    echo "           🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀           "
+    echo "            🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
     echo "=========================================================="
     echo -e "${C_RESET}"
     echo -e "  ${C_GREEN}1. Setup Server ⚙️${C_RESET}"

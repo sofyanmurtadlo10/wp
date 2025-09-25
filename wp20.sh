@@ -72,11 +72,10 @@ load_or_create_password() {
 }
 
 setup_server() {
-    log "header" "MEMULAI SETUP SERVER UNTUK UBUNTU 20.04"
+    log "header" "MEMULAI SETUP SERVER"
     log "info" "Memeriksa dan menginstal dependensi yang dibutuhkan..."
 
-    # Ditambahkan --allow-releaseinfo-change untuk mengatasi error label PPA
-    run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
+    run_task "Memperbarui daftar paket" apt-get update -y || log "error" "Gagal memperbarui paket."
 
     if ! dpkg -s software-properties-common &> /dev/null; then
         run_task "Menginstal software-properties-common" apt-get install -y software-properties-common || log "error" "Gagal menginstal software-properties-common."
@@ -85,18 +84,17 @@ setup_server() {
     fi
 
     if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-        log "info" "Menambahkan PPA PHP dari Ondrej Sury..."
+        log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
         run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php || log "error" "Gagal menambah PPA PHP."
-        # Ditambahkan --allow-releaseinfo-change untuk mengatasi error label PPA
-        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket setelah menambah PPA."
+        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y || log "error" "Gagal memperbarui paket setelah menambah PPA."
     else
         log "info" "PPA ondrej/php sudah ada."
     fi
     
     local packages_needed=(
         nginx mariadb-server mariadb-client unzip curl wget fail2ban redis-server 
-        php7.4-fpm php7.4-mysql php7.4-xml php7.4-curl php7.4-gd php7.4-imagick 
-        php7.4-mbstring php7.4-zip php7.4-intl php7.4-bcmath php7.4-redis
+        php8.3-fpm php8.3-mysql php8.3-xml php8.3-curl php8.3-gd php8.3-imagick 
+        php8.3-mbstring php8.3-zip php8.3-intl php8.3-bcmath php8.3-redis
     )
     local packages_to_install=()
     for pkg in "${packages_needed[@]}"; do
@@ -127,16 +125,12 @@ setup_server() {
     load_or_create_password
     mysql -u root -p"$mariadb_unified_pass" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
     
-    log "info" "Mengonfigurasi Nginx FastCGI Caching..."
-    if [ ! -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
-        tee /etc/nginx/conf.d/fastcgi_cache.conf > /dev/null <<'EOF'
-fastcgi_cache_path /var/run/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
-fastcgi_cache_key "$scheme$request_method$host$request_uri";
-EOF
-        run_task "Memeriksa konfigurasi Nginx setelah menambah cache" nginx -t || log "error" "Konfigurasi Nginx cache tidak valid."
-    else
-        log "info" "Konfigurasi FastCGI Cache sudah ada."
+    # Menghapus konfigurasi fastcgi_cache di setup server karena tidak lagi dibutuhkan.
+    if [ -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
+        run_task "Menghapus konfigurasi FastCGI Cache yang tidak diperlukan" rm /etc/nginx/conf.d/fastcgi_cache.conf || log "warn" "Gagal menghapus file cache. Konfigurasi lama mungkin masih berlaku."
+        run_task "Menguji konfigurasi Nginx" nginx -t || log "error" "Konfigurasi Nginx tidak valid setelah menghapus cache."
     fi
+    log "info" "Konfigurasi FastCGI Cache akan dihapus untuk website baru."
 
     log "info" "Mengonfigurasi Firewall (UFW)..."
     if ! ufw status | grep -q "Status: active"; then
@@ -204,12 +198,12 @@ PHP
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File sertifikat atau kunci privat kosong."; fi
 
     log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
-    tee "/etc/nginx/sites-available/$domain" > /dev/null <<EOF
+    tee "/etc/nginx/sites-available/$domain" > /dev/null <<'EOF'
 server {
     listen 80;
     listen [::]:80;
     server_name $domain www.$domain;
-    return 301 https://\$host\$request_uri;
+    return 301 https://$host$request_uri;
 }
 server {
     listen 443 ssl http2;
@@ -219,7 +213,7 @@ server {
     index index.php;
 
     rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
-    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
+    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=$1&sitemap_n=$2 last;
     rewrite ^/sitemap\.xsl$ /index.php?sitemap_xsl=1 last;
 
     ssl_certificate $ssl_cert_path;
@@ -231,25 +225,14 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     client_max_body_size 100M;
-
-    set \$skip_cache 0;
-    if (\$request_method = POST) { set \$skip_cache 1; }
-    if (\$query_string != "") { set \$skip_cache 1; }
-    if (\$request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|sitemap(_index)?.xml") { set \$skip_cache 1; }
-    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set \$skip_cache 1; }
     
     location / {
-        try_files \$uri \$uri/ /index.php?\$args;
+        try_files $uri $uri/ /index.php?$args;
     }
     
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php7.4-fpm.sock;
-        fastcgi_cache WORDPRESS;
-        fastcgi_cache_valid 200 60m;
-        fastcgi_cache_bypass \$skip_cache;
-        fastcgi_no_cache \$skip_cache;
-        add_header X-Cache-Status \$upstream_cache_status;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
     }
     
     location ~* /(?:uploads|files)/.*\.php$ {
@@ -306,8 +289,8 @@ EOF
     echo -e "${C_GREEN}=======================================================${C_RESET}"
     log "success" "Instalasi WordPress untuk 'https://$domain' selesai! 🎉"
     echo -e "${C_BOLD}URL Login:      ${C_CYAN}https://$domain/wp-admin/${C_RESET}"
-    echo -e "${C_BOLD}Username:       ${C_CYAN}$admin_user${C_RESET}"
-    echo -e "${C_BOLD}Password:       ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
+    echo -e "${C_BOLD}Username:        ${C_CYAN}$admin_user${C_RESET}"
+    echo -e "${C_BOLD}Password:        ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
     echo -e "-------------------------------------------------------"
     echo -e "${C_BOLD}Database Name:  ${C_CYAN}$dbname${C_RESET}"
     echo -e "${C_BOLD}Database User:  ${C_CYAN}$dbuser${C_RESET}"
@@ -369,7 +352,7 @@ show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}"
     echo "=========================================================="
-    echo "           🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀           "
+    echo "            🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
     echo "=========================================================="
     echo -e "${C_RESET}"
     echo -e "  ${C_GREEN}1. Setup Server ⚙️${C_RESET}"
