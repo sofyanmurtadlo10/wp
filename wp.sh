@@ -7,7 +7,7 @@ fi
 
 C_RESET='\e[0m'
 C_RED='\e[1;31m'
-C_GREEN='\e=1;32m'
+C_GREEN='\e[1;32m'
 C_YELLOW='\e[1;33m'
 C_BLUE='\e[1;34m'
 C_MAGENTA='\e[1;35m'
@@ -125,15 +125,10 @@ setup_server() {
     load_or_create_password
     mysql -u root -p"$mariadb_unified_pass" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
     
-    log "info" "Mengonfigurasi Nginx FastCGI Caching..."
-    if [ ! -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
-        tee /etc/nginx/conf.d/fastcgi_cache.conf > /dev/null <<'EOF'
-fastcgi_cache_path /var/run/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
-fastcgi_cache_key "$scheme$request_method$host$request_uri";
-EOF
-        run_task "Memeriksa konfigurasi Nginx setelah menambah cache" nginx -t || log "error" "Konfigurasi Nginx cache tidak valid."
-    else
-        log "info" "Konfigurasi FastCGI Cache sudah ada."
+    # Menghapus file konfigurasi cache global jika ada
+    if [ -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
+        run_task "Menghapus konfigurasi global FastCGI cache" rm "/etc/nginx/conf.d/fastcgi_cache.conf" || log "warn" "Gagal menghapus file cache. Konfigurasi lama mungkin masih berlaku."
+        run_task "Menguji konfigurasi Nginx" nginx -t || log "error" "Konfigurasi Nginx tidak valid setelah menghapus cache."
     fi
 
     log "info" "Mengonfigurasi Firewall (UFW)..."
@@ -202,12 +197,12 @@ PHP
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File sertifikat atau kunci privat kosong."; fi
 
     log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
-    tee "/etc/nginx/sites-available/$domain" > /dev/null <<'EOF'
+    tee "/etc/nginx/sites-available/$domain" > /dev/null <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $domain www.$domain;
-    return 301 https://$host$request_uri;
+    return 301 https://\$host\$request_uri;
 }
 server {
     listen 443 ssl http2;
@@ -217,7 +212,7 @@ server {
     index index.php;
 
     rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
-    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=$1&sitemap_n=$2 last;
+    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
     rewrite ^/sitemap\.xsl$ /index.php?sitemap_xsl=1 last;
 
     ssl_certificate $ssl_cert_path;
@@ -229,9 +224,9 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     client_max_body_size 100M;
-
+    
     location / {
-        try_files $uri $uri/ /index.php?$args;
+        try_files \$uri \$uri/ /index.php?\$args;
     }
     
     location ~ \.php$ {
