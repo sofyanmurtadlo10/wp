@@ -197,8 +197,8 @@ add_website() {
     dbname=$(generate_db_credentials "$domain" "_wp")
     dbuser=$(generate_db_credentials "$domain" "_usr")
 
-    if [ -d "$web_root" ] || [ -f "/etc/nginx/sites-available/$domain" ]; then
-        log "error" "Konflik: Direktori atau file Nginx untuk $domain sudah ada."
+    if [ -f "/etc/nginx/sites-enabled/$domain" ]; then
+        log "error" "Konflik: File konfigurasi Nginx untuk $domain sudah ada di sites-enabled."
     fi
 
     run_task "Membuat database '$dbname' dan user '$dbuser'" mysql -u root -p"$mariadb_unified_pass" -e "CREATE DATABASE $dbname; CREATE USER '$dbuser'@'localhost' IDENTIFIED BY '$mariadb_unified_pass'; GRANT ALL PRIVILEGES ON $dbname.* TO '$dbuser'@'localhost'; FLUSH PRIVILEGES;" || log "error"
@@ -225,8 +225,8 @@ add_website() {
 
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File SSL tidak boleh kosong."; fi
 
-    log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
-    tee "/etc/nginx/sites-available/$domain" > /dev/null <<EOF
+    log "info" "Membuat file konfigurasi Nginx untuk '$domain' langsung di sites-enabled..."
+    tee "/etc/nginx/sites-enabled/$domain" > /dev/null <<EOF
 server {
     listen 80;
     listen [::]:80;
@@ -294,7 +294,6 @@ server {
 }
 EOF
 
-    run_task "Mengaktifkan site Nginx" ln -s "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || log "error"
     if ! run_task "Menguji konfigurasi Nginx" nginx -t; then
         log "error" "Konfigurasi Nginx tidak valid."
     fi
@@ -366,7 +365,7 @@ EOF
 list_websites() {
     log "header" "DAFTAR WEBSITE TERPASANG"
     local sites_dir="/etc/nginx/sites-enabled"
-    if [ -d "$sites_dir" ] && [ -n "$(ls -A $sites_dir)" ]; then
+    if [ -d "$sites_dir" ] && [ -n "$(ls -A "$sites_dir")" ]; then
         for site in "$sites_dir"/*; do
             if [[ "$(basename "$site")" != "default" ]]; then
                 echo -e "  🌐 ${C_GREEN}$(basename "$site")${C_RESET}"
@@ -387,20 +386,18 @@ update_semua_situs() {
         return
     fi
 
-    for site_symlink in "$sites_dir"/*; do
-        local domain=$(basename "$site_symlink")
+    for nginx_conf in "$sites_dir"/*; do
+        local domain=$(basename "$nginx_conf")
         if [[ "$domain" == "default" ]]; then
             continue
         fi
         
-        sites_found=$((sites_found + 1))
-        echo -e "\n${C_BOLD}${C_CYAN}🔎 Memproses situs: $domain${C_RESET}"
-
-        local nginx_conf="/etc/nginx/sites-available/$domain"
         if [ ! -f "$nginx_conf" ]; then
-            log "warn" "File konfigurasi untuk '$domain' tidak ditemukan di sites-available. Melewati."
             continue
         fi
+
+        sites_found=$((sites_found + 1))
+        echo -e "\n${C_BOLD}${C_CYAN}🔎 Memproses situs: $domain${C_RESET}"
 
         local web_root
         web_root=$(grep -oP '^\s*root\s+\K[^;]+' "$nginx_conf" | head -n 1)
@@ -437,8 +434,7 @@ delete_website() {
         return
     fi
 
-    local nginx_conf="/etc/nginx/sites-available/$domain"
-    local nginx_symlink="/etc/nginx/sites-enabled/$domain"
+    local nginx_conf="/etc/nginx/sites-enabled/$domain"
     local ssl_dir="/etc/nginx/ssl/$domain"
     local web_root
     
@@ -468,8 +464,9 @@ delete_website() {
     fi
 
     log "info" "Memulai proses penghapusan untuk '$domain'..."
-    if [ -L "$nginx_symlink" ]; then run_task "Menghapus symlink Nginx" rm "$nginx_symlink"; fi
-    if [ -f "$nginx_conf" ]; then run_task "Menghapus konfigurasi Nginx" rm "$nginx_conf"; fi
+    if [ -f "$nginx_conf" ]; then
+        run_task "Menghapus konfigurasi Nginx dari sites-enabled" rm "$nginx_conf"
+    fi
     run_task "Me-reload Nginx" systemctl reload nginx
 
     if [ -d "$web_root" ]; then
