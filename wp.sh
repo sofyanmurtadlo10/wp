@@ -81,12 +81,11 @@ setup_server() {
         log "error" "Tidak dapat mendeteksi sistem operasi."
     fi
 
-    # --- PENENTUAN VERSI PHP OTOMATIS BERDASARKAN OS ---
     case "$OS_CODENAME" in
         "noble") PHP_VERSION="8.3" ;;
         "jammy") PHP_VERSION="8.1" ;;
         "focal") PHP_VERSION="7.4" ;;
-        *) log "error" "Versi Ubuntu '$OS_CODENAME' tidak didukung secara otomatis. Silakan edit skrip." ;;
+        *) log "error" "Versi Ubuntu '$OS_CODENAME' tidak didukung secara otomatis." ;;
     esac
     log "success" "Versi PHP otomatis dipilih untuk $OS_CODENAME: PHP $PHP_VERSION"
 
@@ -342,9 +341,6 @@ show_menu() {
     echo "         🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀      "
     echo "=========================================================="
     echo -e "${C_RESET}"
-    if [ -f /etc/os-release ]; then source /etc/os-release; PRETTY_NAME=${PRETTY_NAME}; fi
-    echo -e "  OS: ${C_CYAN}${PRETTY_NAME:-Belum Terdeteksi}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION:-Belum Dijalankan}${C_RESET}"
-    echo ""
     echo -e "  ${C_GREEN}1. Setup Awal Server (OS & PHP Otomatis) ⚙️${C_RESET}"
     echo -e "  ${C_CYAN}2. Tambah Website WordPress Baru ➕${C_RESET}"
     echo -e "  ${C_YELLOW}3. Lihat Daftar Website Terpasang 📜${C_RESET}"
