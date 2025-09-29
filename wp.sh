@@ -72,10 +72,10 @@ load_or_create_password() {
 }
 
 setup_server() {
-    log "header" "MEMULAI SETUP SERVER"
+    log "header" "MEMULAI SETUP SERVER UNTUK UBUNTU 20.04"
     log "info" "Memeriksa dan menginstal dependensi yang dibutuhkan..."
 
-    run_task "Memperbarui daftar paket" apt-get update -y || log "error" "Gagal memperbarui paket."
+    run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
 
     if ! dpkg -s software-properties-common &> /dev/null; then
         run_task "Menginstal software-properties-common" apt-get install -y software-properties-common || log "error" "Gagal menginstal software-properties-common."
@@ -84,17 +84,18 @@ setup_server() {
     fi
 
     if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-        log "info" "Menambahkan PPA PHP 8.3 dari Ondrej Sury..."
+        log "info" "Menambahkan PPA PHP dari Ondrej Sury..."
         run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php || log "error" "Gagal menambah PPA PHP."
-        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y || log "error" "Gagal memperbarui paket setelah menambah PPA."
+        run_task "Memperbarui daftar paket lagi setelah menambah PPA" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket setelah menambah PPA."
     else
         log "info" "PPA ondrej/php sudah ada."
     fi
     
+    # Daftar paket menggunakan PHP 8.3
     local packages_needed=(
-        nginx mariadb-server mariadb-client unzip curl wget fail2ban redis-server 
+        nginx mariadb-server mariadb-client unzip curl wget fail2ban
         php8.3-fpm php8.3-mysql php8.3-xml php8.3-curl php8.3-gd php8.3-imagick 
-        php8.3-mbstring php8.3-zip php8.3-intl php8.3-bcmath php8.3-redis
+        php8.3-mbstring php8.3-zip php8.3-intl php8.3-bcmath
     )
     local packages_to_install=()
     for pkg in "${packages_needed[@]}"; do
@@ -125,7 +126,6 @@ setup_server() {
     load_or_create_password
     mysql -u root -p"$mariadb_unified_pass" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mariadb_unified_pass';"
     
-    # Menghapus file konfigurasi cache global jika ada
     if [ -f "/etc/nginx/conf.d/fastcgi_cache.conf" ]; then
         run_task "Menghapus konfigurasi global FastCGI cache" rm "/etc/nginx/conf.d/fastcgi_cache.conf" || log "warn" "Gagal menghapus file cache. Konfigurasi lama mungkin masih berlaku."
         run_task "Menguji konfigurasi Nginx" nginx -t || log "error" "Konfigurasi Nginx tidak valid setelah menghapus cache."
@@ -176,11 +176,8 @@ add_website() {
     run_task "Mengubah kepemilikan direktori ke www-data" chown -R www-data:www-data "/var/www/$domain" || log "error"
     
     run_task "Mengunduh file inti WordPress" sudo -u www-data wp core download --path="$web_root" || log "error"
-    run_task "Membuat file wp-config.php" sudo -u www-data wp config create --path="$web_root" --dbname="$dbname" --dbuser="$dbuser" --dbpass="$mariadb_unified_pass" --extra-php <<'PHP'
-define('WP_CACHE', true);
-define('WP_REDIS_HOST', '127.0.0.1');
-define('WP_REDIS_PORT', 6379);
-PHP
+    
+    run_task "Membuat file wp-config.php" sudo -u www-data wp config create --path="$web_root" --dbname="$dbname" --dbuser="$dbuser" --dbpass="$mariadb_unified_pass"
     if [[ $? -ne 0 ]]; then log "error" "Gagal membuat wp-config.php."; fi
 
     log "header" "KONFIGURASI SSL (HTTPS)"
@@ -231,6 +228,7 @@ server {
     
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
+        # Menggunakan socket PHP 8.3
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
     }
     
@@ -260,7 +258,7 @@ EOF
     run_task "Menghapus plugin Hello Dolly dan Akismet" sudo -u www-data wp plugin delete hello akismet --path="$web_root"
 
     log "info" "Menginstal dan mengaktifkan plugin-plugin yang dibutuhkan..."
-    run_task "Menginstal plugin" sudo -u www-data wp plugin install redis-cache wp-file-manager disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root" || log "error"
+    run_task "Menginstal plugin" sudo -u www-data wp plugin install wp-file-manager disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root" || log "error"
 
     log "info" "Mengunduh dan menginstal plugin kustom dari GitHub..."
     local plugin_url="https://github.com/sofyanmurtadlo10/wp/blob/main/plugin.zip?raw=true"
@@ -282,14 +280,12 @@ EOF
     log "success" "Plugin kustom '$plugin_slug' berhasil diaktifkan."
     
     run_task "Membersihkan file zip sementara" rm "$plugin_zip" || log "warn" "Gagal menghapus file zip sementara."
-
-    run_task "Mengaktifkan Redis Object Cache" sudo -u www-data wp redis enable --path="$web_root" || log "warn" "Gagal mengaktifkan Redis Cache."
     
     echo -e "${C_GREEN}=======================================================${C_RESET}"
     log "success" "Instalasi WordPress untuk 'https://$domain' selesai! 🎉"
     echo -e "${C_BOLD}URL Login:      ${C_CYAN}https://$domain/wp-admin/${C_RESET}"
-    echo -e "${C_BOLD}Username:        ${C_CYAN}$admin_user${C_RESET}"
-    echo -e "${C_BOLD}Password:        ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
+    echo -e "${C_BOLD}Username:         ${C_CYAN}$admin_user${C_RESET}"
+    echo -e "${C_BOLD}Password:         ${C_YELLOW}(Yang baru saja Anda masukkan)${C_RESET}"
     echo -e "-------------------------------------------------------"
     echo -e "${C_BOLD}Database Name:  ${C_CYAN}$dbname${C_RESET}"
     echo -e "${C_BOLD}Database User:  ${C_CYAN}$dbuser${C_RESET}"
@@ -351,7 +347,7 @@ show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}"
     echo "=========================================================="
-    echo "            🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
+    echo "          🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
     echo "=========================================================="
     echo -e "${C_RESET}"
     echo -e "  ${C_GREEN}1. Setup Server ⚙️${C_RESET}"
