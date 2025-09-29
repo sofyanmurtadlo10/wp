@@ -31,10 +31,14 @@ run_task() {
     
     printf "${C_CYAN}  -> %s... ${C_RESET}" "$description"
     
-    output=$("${command_args[@]}" 2>&1)
+    output=$(timeout 30s "${command_args[@]}" 2>&1)
     local exit_code=$?
     
-    if [[ $exit_code -eq 0 ]]; then
+    if [[ $exit_code -eq 124 ]]; then
+        echo -e "${C_RED}[TIMEOUT]${C_RESET}"
+        echo -e "${C_YELLOW}     ↳ Perintah berjalan terlalu lama dan dibatalkan.${C_RESET}" >&2
+        return 1
+    elif [[ $exit_code -eq 0 ]]; then
         echo -e "${C_GREEN}[OK]${C_RESET}"
         return 0
     else
@@ -49,7 +53,7 @@ run_task() {
 }
 
 main() {
-    log "header" "MEMULAI PENGHAPUSAN TOTAL SEMUA CACHE (VERSI AGGRESIF)"
+    log "header" "MEMULAI PENGHAPUSAN TOTAL REDIS & FASTCGI CACHE"
 
     log "header" "MEMPROSES SEMUA WEBSITE (FILE & SYMLINK)"
     local sites_dir="/etc/nginx/sites-enabled"
@@ -73,22 +77,17 @@ main() {
                     log "info" "Memproses domain: $domain | Path: $web_root"
                     local site_has_error=0
                     
-                    # --- PENGHAPUSAN MANUAL & PAKSA ---
                     if [ -f "$web_root/wp-content/object-cache.php" ]; then
-                        run_task "Menghapus paksa object-cache.php" rm -f "$web_root/wp-content/object-cache.php" || site_has_error=1
+                        run_task "Menghapus file object-cache.php" rm -f "$web_root/wp-content/object-cache.php" || site_has_error=1
                     fi
 
                     if [ -d "$web_root/wp-content/plugins/redis-cache" ]; then
                         run_task "Menghapus paksa direktori plugin redis-cache" rm -rf "$web_root/wp-content/plugins/redis-cache" || site_has_error=1
                     fi
 
-                    # Menjalankan perintah WP-CLI sebagai pembersihan akhir
-                    run_task "Flush cache" sudo -u www-data wp cache flush --path="$web_root"
-                    run_task "Hapus 'WP_CACHE' dari wp-config.php" sudo -u www-data wp config delete WP_CACHE --path="$web_root"
-                    run_task "Hapus 'WP_REDIS_HOST' dari wp-config.php" sudo -u www-data wp config delete WP_REDIS_HOST --path="$web_root"
-                    run_task "Hapus 'WP_REDIS_PORT' dari wp-config.php" sudo -u www-data wp config delete WP_REDIS_PORT --path="$web_root"
+                    run_task "Nonaktifkan konstanta Redis di wp-config.php" \
+                        sed -i -E "s/^(define\s*\(\s*['\"](WP_CACHE|WP_REDIS_HOST|WP_REDIS_PORT)['\"]\s*,.*)/\/\/\1/g" "$web_root/wp-config.php"
 
-                    # Nonaktifkan Nginx Cache
                     if grep -q "fastcgi_cache" "$real_config_file" && ! grep -q "#fastcgi_cache" "$real_config_file"; then
                         sed -i -E '/fastcgi_cache_path|fastcgi_cache_key|fastcgi_cache_use_stale|fastcgi_cache |add_header X-Cache-Status/s/^(\s*)/#\1/' "$real_config_file"
                         log "success" "Konfigurasi Nginx FastCGI Cache untuk $domain telah dinonaktifkan."
@@ -121,19 +120,23 @@ main() {
         local php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
         log "info" "Mendeteksi versi PHP default: $php_version"
 
-        run_task "Menghentikan layanan Redis" systemctl stop redis-server
-        run_task "Menonaktifkan layanan Redis" systemctl disable redis-server
+        log "info" "Menghentikan layanan Redis terlebih dahulu..."
+        systemctl stop redis-server
+        systemctl disable redis-server
+
         run_task "Menghapus total paket redis-server" apt-get purge -y redis-server
+        
         if dpkg -s "php${php_version}-redis" &> /dev/null; then
             run_task "Menghapus ekstensi PHP Redis (php${php_version}-redis)" apt-get purge -y "php${php_version}-redis"
         fi
+        
         run_task "Menghapus dependensi sisa" apt-get autoremove -y
         log "success" "Redis telah sepenuhnya dihapus dari server."
     else
         log "info" "Redis server tidak terinstal. Melewati langkah ini."
     fi
 
-    log "success" "PROSES PEMBERSIHAN TOTAL SEMUA CACHE TELAH SELESAI!"
+    log "success" "PROSES PEMBERSIHAN SEMUA CACHE TELAH SELESAI!"
 }
 
 main
