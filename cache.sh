@@ -47,7 +47,6 @@ run_task() {
 }
 
 log "header" "MEMULAI PROSES PENGHAPUSAN TOTAL SEMUA CACHE SECARA OTOMATIS"
-log "warn" "Tidak ada langkah konfirmasi. Proses akan langsung berjalan."
 
 log "header" "MEMPROSES SEMUA WEBSITE YANG TERINSTAL"
 sites_dir="/etc/nginx/sites-enabled"
