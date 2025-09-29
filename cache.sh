@@ -31,14 +31,11 @@ run_task() {
     
     printf "${C_CYAN}  -> %s... ${C_RESET}" "$description"
     
-    output=$(timeout 30s "${command_args[@]}" 2>&1)
+    # PERBAIKAN: Timeout dihapus dari perintah
+    output=$("${command_args[@]}" 2>&1)
     local exit_code=$?
     
-    if [[ $exit_code -eq 124 ]]; then
-        echo -e "${C_RED}[TIMEOUT]${C_RESET}"
-        echo -e "${C_YELLOW}     ↳ Perintah berjalan terlalu lama dan dibatalkan.${C_RESET}" >&2
-        return 1
-    elif [[ $exit_code -eq 0 ]]; then
+    if [[ $exit_code -eq 0 ]]; then
         echo -e "${C_GREEN}[OK]${C_RESET}"
         return 0
     else
@@ -118,7 +115,10 @@ main() {
     log "header" "MENGHAPUS REDIS DARI SERVER"
     if dpkg -s redis-server &> /dev/null; then
         local php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
-        log "info" "Mendeteksi versi PHP default: $php_version"
+        
+        log "info" "Memastikan tidak ada proses APT lain yang berjalan..."
+        killall apt apt-get &>/dev/null
+        dpkg --configure -a &>/dev/null
 
         log "info" "Menghentikan layanan Redis terlebih dahulu..."
         systemctl stop redis-server
@@ -131,9 +131,10 @@ main() {
         fi
         
         run_task "Menghapus dependensi sisa" apt-get autoremove -y
-        log "success" "Redis telah sepenuhnya dihapus dari server."
-    else
-        log "info" "Redis server tidak terinstal. Melewati langkah ini."
+    fi
+    
+    if ! dpkg -s redis-server &> /dev/null; then
+        log "success" "Redis telah sepenuhnya dihapus dari server atau sudah tidak terinstal."
     fi
 
     log "success" "PROSES PEMBERSIHAN SEMUA CACHE TELAH SELESAI!"
