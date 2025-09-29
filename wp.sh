@@ -262,6 +262,32 @@ EOF
     
     run_task "Menjalankan instalasi WordPress" sudo -u www-data wp core install --path="$web_root" --url="https://$domain" --title="$site_title" --admin_user="$admin_user" --admin_password="$admin_password" --admin_email="$admin_email" || log "error"
     
+    run_task "Menghapus plugin bawaan" sudo -u www-data wp plugin delete hello akismet --path="$web_root"
+
+    log "info" "Menginstal dan mengaktifkan plugin-plugin yang dibutuhkan..."
+    run_task "Menginstal plugin" sudo -u www-data wp plugin install wp-file-manager disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root" || log "error"
+
+    log "info" "Mengunduh dan menginstal plugin kustom dari GitHub..."
+    local plugin_url="https://github.com/sofyanmurtadlo10/wp/blob/main/plugin.zip?raw=true"
+    local plugin_zip="/tmp/plugin_kustom.zip"
+    local plugin_dir="$web_root/wp-content/plugins/"
+    run_task "Mengunduh plugin kustom dari GitHub" wget -qO "$plugin_zip" "$plugin_url" || log "error" "Gagal mengunduh plugin kustom."
+    if [ ! -s "$plugin_zip" ]; then log "error" "File zip plugin kustom kosong."; fi
+
+    local plugin_slug
+    plugin_slug=$(unzip -l "$plugin_zip" | awk 'NR==4 {print $4}' | sed 's|/||')
+    if [ -z "$plugin_slug" ]; then log "error" "Tidak dapat menentukan nama slug plugin dari file zip."; fi
+    log "info" "Mendeteksi slug plugin kustom: $plugin_slug"
+
+    run_task "Mengekstrak plugin kustom" sudo -u www-data unzip -o "$plugin_zip" -d "$plugin_dir" || log "error"
+    
+    if ! run_task "Mengaktifkan plugin kustom '$plugin_slug'" sudo -u www-data wp plugin activate "$plugin_slug" --path="$web_root"; then
+        log "error" "GAGAL MENGAKTIFKAN PLUGIN KUSTOM. Periksa detail error di atas."
+    fi
+    log "success" "Plugin kustom '$plugin_slug' berhasil diaktifkan."
+    
+    run_task "Membersihkan file zip sementara" rm "$plugin_zip" || log "warn" "Gagal menghapus file zip sementara."
+
     log "success" "Instalasi WordPress untuk 'https://$domain' selesai!"
 }
 
@@ -341,6 +367,9 @@ show_menu() {
     echo "         🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀      "
     echo "=========================================================="
     echo -e "${C_RESET}"
+    if [ -z "$PRETTY_NAME" ] && [ -f /etc/os-release ]; then source /etc/os-release; PRETTY_NAME=${PRETTY_NAME}; fi
+    echo -e "  OS: ${C_CYAN}${PRETTY_NAME:-Belum Dijalankan}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION:-Belum Dijalankan}${C_RESET}"
+    echo ""
     echo -e "  ${C_GREEN}1. Setup Awal Server (OS & PHP Otomatis) ⚙️${C_RESET}"
     echo -e "  ${C_CYAN}2. Tambah Website WordPress Baru ➕${C_RESET}"
     echo -e "  ${C_YELLOW}3. Lihat Daftar Website Terpasang 📜${C_RESET}"
