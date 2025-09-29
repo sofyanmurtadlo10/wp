@@ -5,7 +5,6 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-#--- Variabel Warna ---
 C_RESET='\e[0m'
 C_RED='\e[1;31m'
 C_GREEN='\e[1;32m'
@@ -13,7 +12,6 @@ C_YELLOW='\e[1;33m'
 C_CYAN='\e[1;36m'
 C_BOLD='\e[1m'
 
-#--- Fungsi Bantuan untuk Logging ---
 log() {
     local type=$1
     local msg=$2
@@ -26,7 +24,6 @@ log() {
     esac
 }
 
-#--- Fungsi Bantuan untuk Menjalankan Perintah ---
 run_task() {
     local description=$1
     shift
@@ -49,27 +46,9 @@ run_task() {
     fi
 }
 
-#--- EKSEKUSI UTAMA ---
+log "header" "MEMULAI PROSES PENGHAPUSAN TOTAL SEMUA CACHE SECARA OTOMATIS"
+log "warn" "Tidak ada langkah konfirmasi. Proses akan langsung berjalan."
 
-# 1. Konfirmasi Keamanan Berlapis
-log "header" "PERINGATAN SEBELUM EKSEKUSI"
-log "warn" "Skrip ini akan melakukan perubahan signifikan pada server Anda."
-log "warn" "SANGAT DISARANKAN untuk melakukan backup direktori '/var/www' dan database SQL Anda sebelum melanjutkan."
-echo ""
-echo -e "${C_YELLOW}Skrip ini akan melakukan tindakan berikut:${C_RESET}"
-echo -e "${C_YELLOW}  1. Menonaktifkan (memberi komentar) konfigurasi Nginx FastCGI Cache."
-echo -e "${C_YELLOW}  2. Menghapus plugin 'redis-cache' & file 'object-cache.php' dari semua website."
-echo -e "${C_YELLOW}  3. Membersihkan konstanta Redis dari file 'wp-config.php'."
-echo -e "${C_YELLOW}  4. Menghapus total Redis Server dan ekstensi PHP-Redis dari server.${C_RESET}"
-echo ""
-read -p "Untuk melanjutkan, ketik 'SAYA SUDAH BACKUP DAN SETUJU' lalu tekan Enter: " confirmation
-
-if [[ "$confirmation" != "SAYA SUDAH BACKUP DAN SETUJU" ]]; then
-    log "info" "Konfirmasi tidak cocok. Operasi dibatalkan."
-    exit 0
-fi
-
-# 2. Proses Setiap Website
 log "header" "MEMPROSES SEMUA WEBSITE YANG TERINSTAL"
 sites_dir="/etc/nginx/sites-enabled"
 sites_processed=0
@@ -86,10 +65,13 @@ else
             if [ -f "$web_root/wp-config.php" ]; then
                 log "info" "Memproses domain: $domain"
                 
-                if grep -q "fastcgi_cache" "$config_file" && ! grep -q "#fastcgi_cache" "$config_file"; then
-                    # Memberi komentar pada baris-baris cache, bukan menghapusnya
-                    sed -i -E '/fastcgi_cache_path|fastcgi_cache_key|fastcgi_cache_use_stale|fastcgi_cache |add_header X-Cache-Status/s/^(\s*)/#\1/' "$config_file"
-                    log "success" "Konfigurasi Nginx FastCGI Cache untuk $domain telah dinonaktifkan (diberi komentar)."
+                if grep -q "fastcgi_cache" "$config_file"; then
+                    sed -i '/fastcgi_cache_path/d' "$config_file"
+                    sed -i '/fastcgi_cache_key/d' "$config_file"
+                    sed -i '/fastcgi_cache_use_stale/d' "$config_file"
+                    sed -i '/fastcgi_cache /d' "$config_file"
+                    sed -i '/add_header X-Cache-Status/d' "$config_file"
+                    log "success" "Konfigurasi Nginx FastCGI Cache untuk $domain telah dihapus."
                 fi
 
                 log "info" "Menghapus integrasi Redis Cache dari WordPress..."
@@ -111,19 +93,17 @@ else
     done
 fi
 
-# 3. Reload Nginx jika ada perubahan
 if [ $sites_processed -gt 0 ]; then
     log "info" "Selesai memproses $sites_processed website."
     log "header" "MENERAPKAN PERUBAHAN NGINX"
     if ! run_task "Menguji konfigurasi Nginx" nginx -t; then
-        log "error" "Konfigurasi Nginx tidak valid. Perubahan belum diterapkan. Silakan periksa error di atas."
+         log "error" "Konfigurasi Nginx tidak valid. Perubahan belum diterapkan. Silakan periksa error di atas."
     fi
     run_task "Me-reload layanan Nginx" systemctl reload nginx || log "error" "Gagal me-reload Nginx."
 else
     log "warn" "Tidak ada website WordPress yang diproses."
 fi
 
-# 4. Hapus Redis dari Server
 log "header" "MENGHAPUS REDIS DARI SERVER"
 if dpkg -s redis-server &> /dev/null; then
     php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
