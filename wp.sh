@@ -85,11 +85,12 @@ prompt_input() {
     
     while true; do
         local user_input
+        printf "%b" "$prompt_text"
         if $is_secret; then
-            read -s -p "$prompt_text" user_input
+            read -s user_input
             echo
         else
-            read -p "$prompt_text" user_input
+            read user_input
         fi
         
         user_input_sanitized="${user_input// /}"
@@ -488,7 +489,7 @@ show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}"
     echo "=========================================================="
-    echo "          🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
+    echo "                🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀         "
     echo "=========================================================="
     echo -e "${C_RESET}"
     if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
