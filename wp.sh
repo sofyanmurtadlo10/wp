@@ -72,7 +72,7 @@ load_or_create_password() {
 }
 
 setup_server() {
-    log "header" "MEMULAI SETUP SERVER UNTUK UBUNTU 20.04"
+    log "header" "MEMULAI SETUP SERVER UNTUK UBUNTU 24.04"
     log "info" "Memeriksa dan menginstal dependensi yang dibutuhkan..."
 
     run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
@@ -91,7 +91,6 @@ setup_server() {
         log "info" "PPA ondrej/php sudah ada."
     fi
     
-    # Daftar paket menggunakan PHP 8.3
     local packages_needed=(
         nginx mariadb-server mariadb-client unzip curl wget fail2ban
         php8.3-fpm php8.3-mysql php8.3-xml php8.3-curl php8.3-gd php8.3-imagick 
