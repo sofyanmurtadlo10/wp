@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/-bin/env bash
 
 if [[ $EUID -ne 0 ]]; then
     echo "❌ Kesalahan: Skrip ini harus dijalankan sebagai root. Coba 'sudo bash $0'"
@@ -48,7 +48,7 @@ run_task() {
 
 log "header" "MEMULAI PROSES PENGHAPUSAN TOTAL SEMUA CACHE SECARA OTOMATIS"
 
-log "header" "MEMPROSES SEMUA WEBSITE YANG TERINSTAL"
+log "header" "MEMPROSES SEMUA WEBSITE DENGAN DETEKSI PATH OTOMATIS"
 sites_dir="/etc/nginx/sites-enabled"
 sites_processed=0
 
@@ -58,35 +58,40 @@ else
     for site_symlink in "$sites_dir"/*; do
         if [ -L "$site_symlink" ] && [[ "$site_symlink" != *"default"* ]]; then
             domain=$(basename "$site_symlink")
-            web_root="/var/www/$domain/public_html"
             config_file=$(readlink -f "$site_symlink")
 
+            web_root=$(grep -oP '^\s*root\s+\K[^;]+' "$config_file" | head -n 1)
+
+            if [ -z "$web_root" ]; then
+                log "warn" "Tidak dapat menemukan direktori 'root' di file konfigurasi untuk domain $domain. Melewati."
+                continue
+            fi
+            
+            log "info" "Memproses domain: $domain | Path terdeteksi: $web_root"
+
             if [ -f "$web_root/wp-config.php" ]; then
-                log "info" "Memproses domain: $domain"
-                
-                if grep -q "fastcgi_cache" "$config_file"; then
-                    sed -i '/fastcgi_cache_path/d' "$config_file"
-                    sed -i '/fastcgi_cache_key/d' "$config_file"
-                    sed -i '/fastcgi_cache_use_stale/d' "$config_file"
-                    sed -i '/fastcgi_cache /d' "$config_file"
-                    sed -i '/add_header X-Cache-Status/d' "$config_file"
-                    log "success" "Konfigurasi Nginx FastCGI Cache untuk $domain telah dihapus."
-                fi
-
-                log "info" "Menghapus integrasi Redis Cache dari WordPress..."
-                run_task "Flush cache Redis" sudo -u www-data wp redis flush --path="$web_root"
-                run_task "Nonaktifkan plugin redis-cache" sudo -u www-data wp plugin deactivate redis-cache --path="$web_root"
-                run_task "Hapus plugin redis-cache" sudo -u www-data wp plugin delete redis-cache --path="$web_root"
-
                 if [ -f "$web_root/wp-content/object-cache.php" ]; then
                     run_task "Menghapus file drop-in object-cache.php" rm "$web_root/wp-content/object-cache.php"
                 fi
-                
+
+                if sudo -u www-data wp plugin is-installed redis-cache --path="$web_root" &>/dev/null; then
+                    run_task "Flush cache Redis" sudo -u www-data wp redis flush --path="$web_root"
+                    run_task "Nonaktifkan plugin redis-cache" sudo -u www-data wp plugin deactivate redis-cache --path="$web_root"
+                    run_task "Hapus plugin redis-cache" sudo -u www-data wp plugin delete redis-cache --path="$web_root"
+                fi
+
                 run_task "Hapus 'WP_CACHE' dari wp-config.php" sudo -u www-data wp config delete WP_CACHE --path="$web_root"
                 run_task "Hapus 'WP_REDIS_HOST' dari wp-config.php" sudo -u www-data wp config delete WP_REDIS_HOST --path="$web_root"
                 run_task "Hapus 'WP_REDIS_PORT' dari wp-config.php" sudo -u www-data wp config delete WP_REDIS_PORT --path="$web_root"
+
+                if grep -q "fastcgi_cache" "$config_file" && ! grep -q "#fastcgi_cache" "$config_file"; then
+                    sed -i -E '/fastcgi_cache_path|fastcgi_cache_key|fastcgi_cache_use_stale|fastcgi_cache |add_header X-Cache-Status/s/^(\s*)/#\1/' "$config_file"
+                    log "success" "Konfigurasi Nginx FastCGI Cache untuk $domain telah dinonaktifkan."
+                fi
                 
                 ((sites_processed++))
+            else
+                log "warn" "File wp-config.php tidak ditemukan di '$web_root'. Melewati domain $domain."
             fi
         fi
     done
