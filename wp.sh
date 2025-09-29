@@ -66,7 +66,7 @@ load_or_create_password() {
 }
 
 setup_server() {
-    log "header" "MEMULAI SETUP SERVER DINAMIS"
+    log "header" "MEMULAI SETUP SERVER DENGAN DETEKSI OTOMATIS"
 
     if [ -f /etc/os-release ]; then
         source /etc/os-release
@@ -81,6 +81,15 @@ setup_server() {
         log "error" "Tidak dapat mendeteksi sistem operasi."
     fi
 
+    # --- PENENTUAN VERSI PHP OTOMATIS BERDASARKAN OS ---
+    case "$OS_CODENAME" in
+        "noble") PHP_VERSION="8.3" ;;
+        "jammy") PHP_VERSION="8.1" ;;
+        "focal") PHP_VERSION="7.4" ;;
+        *) log "error" "Versi Ubuntu '$OS_CODENAME' tidak didukung secara otomatis. Silakan edit skrip." ;;
+    esac
+    log "success" "Versi PHP otomatis dipilih untuk $OS_CODENAME: PHP $PHP_VERSION"
+
     run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
 
     if ! dpkg -s software-properties-common &> /dev/null; then
@@ -92,24 +101,6 @@ setup_server() {
         run_task "Menambahkan PPA ondrej/php" add-apt-repository -y ppa:ondrej/php || log "error"
         run_task "Memperbarui daftar paket lagi" apt-get update -y --allow-releaseinfo-change || log "error"
     fi
-
-    log "header" "PILIH VERSI PHP"
-    mapfile -t available_php_versions < <(apt-cache search --names-only '^php[0-9]+\.[0-9]+-fpm$' | sed 's/-fpm//' | sort -V -r)
-    if [ ${#available_php_versions[@]} -eq 0 ]; then
-        log "error" "Tidak ada versi PHP yang ditemukan dari PPA."
-    fi
-    
-    echo "Silakan pilih versi PHP yang ingin diinstal:"
-    PS3="Pilih nomor: "
-    select php_choice in "${available_php_versions[@]}"; do
-        if [[ -n "$php_choice" ]]; then
-            PHP_VERSION=$(echo "$php_choice" | sed 's/php//')
-            log "info" "Anda memilih untuk menginstal PHP $PHP_VERSION."
-            break
-        else
-            log "warn" "Pilihan tidak valid. Coba lagi."
-        fi
-    done
 
     local core_packages=(nginx mariadb-server mariadb-client unzip curl wget fail2ban)
     local php_packages=(
@@ -126,7 +117,7 @@ setup_server() {
     done
 
     if [ ${#packages_to_install[@]} -gt 0 ]; then
-        run_task "Menginstal paket yang dibutuhkan" apt-get install -y "${packages_to_install[@]}" || log "error"
+        run_task "Menginstal paket yang dibutuhkan (PHP $PHP_VERSION)" apt-get install -y "${packages_to_install[@]}" || log "error"
     else
         log "info" "Semua paket inti sudah terinstal."
     fi
@@ -150,7 +141,8 @@ setup_server() {
 
 add_website() {
     if [ -z "$PHP_VERSION" ]; then
-        log "error" "Versi PHP belum ditentukan. Jalankan 'Setup Server' (opsi 1) terlebih dahulu."
+        log "warn" "Versi PHP belum ditentukan. Menjalankan 'Setup Server' (opsi 1) terlebih dahulu..."
+        setup_server
     fi
 
     log "header" "TAMBAH WEBSITE WORDPRESS BARU"
@@ -347,12 +339,13 @@ delete_website() {
 show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}=========================================================="
-    echo "         🚀 SCRIPT MANAJEMEN WORDPRESS DINAMIS 🚀       "
+    echo "         🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀      "
     echo "=========================================================="
     echo -e "${C_RESET}"
-    echo -e "  OS: ${C_CYAN}${PRETTY_NAME:-Belum Terdeteksi}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION:-Belum Dipilih}${C_RESET}"
+    if [ -f /etc/os-release ]; then source /etc/os-release; PRETTY_NAME=${PRETTY_NAME}; fi
+    echo -e "  OS: ${C_CYAN}${PRETTY_NAME:-Belum Terdeteksi}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION:-Belum Dijalankan}${C_RESET}"
     echo ""
-    echo -e "  ${C_GREEN}1. Setup Awal Server (Deteksi OS & PHP Otomatis) ⚙️${C_RESET}"
+    echo -e "  ${C_GREEN}1. Setup Awal Server (OS & PHP Otomatis) ⚙️${C_RESET}"
     echo -e "  ${C_CYAN}2. Tambah Website WordPress Baru ➕${C_RESET}"
     echo -e "  ${C_YELLOW}3. Lihat Daftar Website Terpasang 📜${C_RESET}"
     echo -e "  ${C_RED}4. Hapus Website 🗑️${C_RESET}"
