@@ -486,16 +486,10 @@ delete_website() {
 
 show_menu() {
     clear
-    TERMINAL_WIDTH=80
-    TEXT="🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀"
-    TEXT_LENGTH=${#TEXT}
-    PAD_LENGTH=$(( (TERMINAL_WIDTH - TEXT_LENGTH) / 2 ))
-
-    LINE=$(printf '%*s' $TERMINAL_WIDTH | tr ' ' '=')
-
-    echo -e "${C_BOLD}${C_MAGENTA}${LINE}"
-    printf "%*s%s%*s\n" $PAD_LENGTH "" "$TEXT" $PAD_LENGTH ""
-    echo -e "$LINE"
+    echo -e "${C_BOLD}${C_MAGENTA}"
+    echo "=========================================================="
+    echo "          🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
+    echo "=========================================================="
     echo -e "${C_RESET}"
     if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
         echo -e "  OS: ${C_CYAN}${PRETTY_NAME}${C_RESET} | PHP: ${C_RED}${PHP_VERSION}${C_RESET}"
