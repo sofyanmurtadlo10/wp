@@ -31,7 +31,6 @@ run_task() {
     
     printf "${C_CYAN}  -> %s... ${C_RESET}" "$description"
     
-    # PERBAIKAN: Timeout dihapus dari perintah
     output=$("${command_args[@]}" 2>&1)
     local exit_code=$?
     
@@ -120,9 +119,9 @@ main() {
         killall apt apt-get &>/dev/null
         dpkg --configure -a &>/dev/null
 
-        log "info" "Menghentikan layanan Redis terlebih dahulu..."
-        systemctl stop redis-server
-        systemctl disable redis-server
+        log "info" "Menghentikan dan menonaktifkan layanan Redis..."
+        systemctl stop redis-server &>/dev/null
+        systemctl disable redis-server &>/dev/null
 
         run_task "Menghapus total paket redis-server" apt-get purge -y redis-server
         
