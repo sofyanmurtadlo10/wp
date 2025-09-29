@@ -52,28 +52,12 @@ run_task() {
     fi
 }
 
-load_or_create_password() {
-    if [ -s "$password_file" ]; then
-        mariadb_unified_pass=$(cat "$password_file")
-    else
-        log "header" "KONFIGURASI KATA SANDI MARIADB"
-        read -s -p "Masukkan kata sandi baru untuk MariaDB root: " mariadb_unified_pass; echo
-        if [ -z "$mariadb_unified_pass" ]; then log "error" "Kata sandi tidak boleh kosong."; fi
-        echo "$mariadb_unified_pass" > "$password_file"
-        chmod 600 "$password_file"
-        log "success" "Kata sandi berhasil disimpan ke '$password_file'."
-    fi
-}
-
-setup_server() {
-    log "header" "MEMULAI SETUP SERVER DENGAN DETEKSI OTOMATIS"
-
+detect_os_php() {
     if [ -f /etc/os-release ]; then
         source /etc/os-release
         OS_ID=$ID
         OS_CODENAME=$VERSION_CODENAME
         PRETTY_NAME=$PRETTY_NAME
-        log "info" "Sistem Operasi terdeteksi: $PRETTY_NAME"
         if [[ "$OS_ID" != "ubuntu" ]]; then
             log "error" "Skrip ini dioptimalkan untuk Ubuntu. OS terdeteksi: $OS_ID."
         fi
@@ -85,9 +69,59 @@ setup_server() {
         "noble") PHP_VERSION="8.3" ;;
         "jammy") PHP_VERSION="8.1" ;;
         "focal") PHP_VERSION="7.4" ;;
-        *) log "error" "Versi Ubuntu '$OS_CODENAME' tidak didukung secara otomatis." ;;
+        *) PHP_VERSION="Tidak Didukung" ;;
     esac
-    log "success" "Versi PHP otomatis dipilih untuk $OS_CODENAME: PHP $PHP_VERSION"
+}
+
+prompt_input() {
+    local message=$1
+    local var_name=$2
+    local is_secret=false
+    if [[ "$3" == "-s" ]]; then
+        is_secret=true
+    fi
+
+    local prompt_text="${C_CYAN}❓ ${message}:${C_RESET} "
+    
+    while true; do
+        local user_input
+        if $is_secret; then
+            read -s -p "$prompt_text" user_input
+            echo
+        else
+            read -p "$prompt_text" user_input
+        fi
+        
+        user_input_sanitized="${user_input// /}"
+
+        if [[ -n "$user_input_sanitized" ]]; then
+            eval "$var_name"="'$user_input_sanitized'"
+            break
+        else
+            echo -e "${C_RED}Input tidak boleh kosong. Silakan coba lagi.${C_RESET}"
+        fi
+    done
+}
+
+load_or_create_password() {
+    if [ -s "$password_file" ]; then
+        mariadb_unified_pass=$(cat "$password_file")
+    else
+        log "header" "KONFIGURASI KATA SANDI MARIADB"
+        prompt_input "Kata sandi baru untuk MariaDB root" mariadb_unified_pass -s
+        echo "$mariadb_unified_pass" > "$password_file"
+        chmod 600 "$password_file"
+        log "success" "Kata sandi berhasil disimpan ke '$password_file'."
+    fi
+}
+
+setup_server() {
+    log "header" "MEMULAI SETUP SERVER"
+    log "info" "Menggunakan OS terdeteksi: $PRETTY_NAME"
+    if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
+        log "error" "Versi Ubuntu '$OS_CODENAME' tidak didukung secara otomatis oleh skrip ini."
+    fi
+    log "success" "Versi PHP yang akan digunakan untuk $OS_CODENAME: PHP $PHP_VERSION"
 
     run_task "Memperbarui daftar paket" apt-get update -y --allow-releaseinfo-change || log "error" "Gagal memperbarui paket."
 
@@ -138,21 +172,30 @@ setup_server() {
     log "success" "Setup server selesai! Versi PHP aktif: $PHP_VERSION."
 }
 
+generate_db_credentials() {
+    local domain=$1
+    local suffix=$2
+    local domain_part
+    domain_part=$(echo "$domain" | tr '.' '_' | cut -c1-10)
+    local hash_part
+    hash_part=$(echo -n "$domain" | md5sum | cut -c1-5)
+    echo "${domain_part}_${hash_part}${suffix}"
+}
+
 add_website() {
-    if [ -z "$PHP_VERSION" ]; then
-        log "warn" "Versi PHP belum ditentukan. Menjalankan 'Setup Server' (opsi 1) terlebih dahulu..."
-        setup_server
+    if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
+        log "error" "Tidak dapat menambah website karena versi Ubuntu '$OS_CODENAME' tidak didukung."
     fi
 
     log "header" "TAMBAH WEBSITE WORDPRESS BARU"
     load_or_create_password
     local domain web_root dbname dbuser
     
-    read -p "Masukkan nama domain (contoh: domainanda.com): " domain
+    prompt_input "Nama domain (contoh: domainanda.com)" domain
     
     web_root="/var/www/$domain/public_html"
-    dbname=$(echo "$domain" | tr '.' '_' | cut -c1-16)_wp
-    dbuser=$(echo "$domain" | tr '.' '_' | cut -c1-16)_usr
+    dbname=$(generate_db_credentials "$domain" "_wp")
+    dbuser=$(generate_db_credentials "$domain" "_usr")
 
     if [ -d "$web_root" ] || [ -f "/etc/nginx/sites-available/$domain" ]; then
         log "error" "Konflik: Direktori atau file Nginx untuk $domain sudah ada."
@@ -170,12 +213,16 @@ add_website() {
     run_task "Membuat direktori SSL" mkdir -p "$ssl_dir" || log "error"
     local ssl_cert_path="$ssl_dir/$domain.crt"
     local ssl_key_path="$ssl_dir/$domain.key"
-    echo -e "${C_YELLOW}Tempelkan konten sertifikat (.crt), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
-    read -p "Tekan ENTER untuk membuka editor..."
+    
+    log "info" "Selanjutnya, editor teks 'nano' akan terbuka untuk Anda."
+    echo -e "${C_YELLOW}  -> Tempelkan konten sertifikat (.crt), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
+    read -p "   Tekan ENTER untuk melanjutkan..."
     nano "$ssl_cert_path"
-    echo -e "${C_YELLOW}Tempelkan konten Kunci Privat (.key), lalu simpan.${C_RESET}"
-    read -p "Tekan ENTER untuk membuka editor..."
+    
+    echo -e "${C_YELLOW}  -> Tempelkan konten Kunci Privat (.key), lalu simpan.${C_RESET}"
+    read -p "   Tekan ENTER untuk melanjutkan..."
     nano "$ssl_key_path"
+
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File SSL tidak boleh kosong."; fi
 
     log "info" "Membuat file konfigurasi Nginx untuk '$domain'..."
@@ -184,7 +231,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name $domain www.$domain;
-    return 301 https://$domain\$request_uri;
+    return 301 https://\$domain\$request_uri;
 }
 server {
     listen 443 ssl http2;
@@ -254,37 +301,62 @@ EOF
     run_task "Me-reload layanan Nginx" systemctl reload nginx || log "error"
 
     log "header" "INFORMASI ADMIN WORDPRESS"
+    log "info" "Silakan masukkan detail untuk akun admin WordPress."
     local site_title admin_user admin_password admin_email
-    read -p "Masukkan Judul Website: " site_title
-    read -p "Masukkan Username Admin: " admin_user
-    read -s -p "Masukkan Password Admin: " admin_password; echo
-    read -p "Masukkan Email Admin: " admin_email
+    
+    prompt_input "Judul Website" site_title
+    prompt_input "Username Admin" admin_user
+    prompt_input "Password Admin" admin_password -s
+    prompt_input "Email Admin" admin_email
     
     run_task "Menjalankan instalasi WordPress" sudo -u www-data wp core install --path="$web_root" --url="https://$domain" --title="$site_title" --admin_user="$admin_user" --admin_password="$admin_password" --admin_email="$admin_email" || log "error"
     
     run_task "Menghapus plugin bawaan" sudo -u www-data wp plugin delete hello akismet --path="$web_root"
 
-    log "info" "Menginstal dan mengaktifkan plugin-plugin yang dibutuhkan..."
-    run_task "Menginstal plugin" sudo -u www-data wp plugin install wp-file-manager disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root" || log "error"
+    local inactive_themes
+    inactive_themes=$(sudo -u www-data wp theme list --status=inactive --field=name --path="$web_root" 2>/dev/null)
 
-    log "info" "Mengunduh dan menginstal plugin kustom dari GitHub..."
-    local plugin_url="https://github.com/sofyanmurtadlo10/wp/blob/main/plugin.zip?raw=true"
-    local plugin_zip="/tmp/plugin_kustom.zip"
-    local plugin_dir="$web_root/wp-content/plugins/"
-    run_task "Mengunduh plugin kustom dari GitHub" wget -qO "$plugin_zip" "$plugin_url" || log "error" "Gagal mengunduh plugin kustom."
-    if [ ! -s "$plugin_zip" ]; then log "error" "File zip plugin kustom kosong."; fi
-
-    local plugin_slug
-    plugin_slug=$(unzip -l "$plugin_zip" | awk 'NR==4 {print $4}' | sed 's|/||')
-    if [ -z "$plugin_slug" ]; then log "error" "Tidak dapat menentukan nama slug plugin dari file zip."; fi
-    log "info" "Mendeteksi slug plugin kustom: $plugin_slug"
-
-    run_task "Mengekstrak plugin kustom" sudo -u www-data unzip -o "$plugin_zip" -d "$plugin_dir" || log "error"
-    
-    if ! run_task "Mengaktifkan plugin kustom '$plugin_slug'" sudo -u www-data wp plugin activate "$plugin_slug" --path="$web_root"; then
-        log "error" "GAGAL MENGAKTIFKAN PLUGIN KUSTOM. Periksa detail error di atas."
+    if [ -n "$inactive_themes" ]; then
+        local themes_to_delete=()
+        mapfile -t themes_to_delete <<< "$inactive_themes"
+        run_task "Menghapus tema bawaan yang tidak aktif" sudo -u www-data wp theme delete "${themes_to_delete[@]}" --path="$web_root"
+    else
+        printf "${C_CYAN}  -> Menghapus tema bawaan yang tidak aktif... ${C_RESET}${C_GREEN}[SKIP]${C_RESET} (Tidak ada)\n"
     fi
-    log "success" "Plugin kustom '$plugin_slug' berhasil diaktifkan."
+
+    log "info" "Menginstal plugin-plugin yang dibutuhkan..."
+    run_task "Menginstal plugin standar" sudo -u www-data wp plugin install wp-file-manager disable-comments-rb floating-ads-bottom post-views-counter seo-by-rank-math --activate --path="$web_root" || log "error"
+
+    log "info" "Mengunduh dan menginstal paket plugin kustom..."
+    local plugin_url="https://github.com/sofyanmurtadlo10/wp/blob/main/plugin.zip?raw=true"
+    local plugin_zip="/tmp/plugin_paket.zip"
+    local plugin_dir="$web_root/wp-content/plugins/"
+    run_task "Mengunduh paket plugin dari GitHub" wget -qO "$plugin_zip" "$plugin_url" || log "error" "Gagal mengunduh paket plugin."
+    if [ ! -s "$plugin_zip" ]; then log "error" "File zip paket plugin kosong."; fi
+
+    local plugins_before
+    plugins_before=$(sudo -u www-data wp plugin list --field=name --path="$web_root")
+    
+    run_task "Mengekstrak semua plugin dari file zip" sudo -u www-data unzip -o "$plugin_zip" -d "$plugin_dir" || log "error"
+
+    local plugins_after
+    plugins_after=$(sudo -u www-data wp plugin list --field=name --path="$web_root")
+    
+    local new_plugins
+    new_plugins=$(comm -13 <(echo "$plugins_before" | sort) <(echo "$plugins_after" | sort))
+
+    if [ -n "$new_plugins" ]; then
+        log "info" "Plugin baru terdeteksi dari zip: $(echo "$new_plugins" | tr '\n' ' ')"
+        local plugins_to_activate
+        read -r -a plugins_to_activate <<< "$new_plugins"
+        
+        if ! run_task "Mengaktifkan semua plugin baru" sudo -u www-data wp plugin activate "${plugins_to_activate[@]}" --path="$web_root"; then
+            log "error" "GAGAL MENGAKTIFKAN PLUGIN BARU. Periksa detail error di atas."
+        fi
+        log "success" "Semua plugin dari paket zip berhasil diaktifkan."
+    else
+        log "warn" "Tidak ada plugin baru yang terdeteksi di dalam file zip."
+    fi
     
     run_task "Membersihkan file zip sementara" rm "$plugin_zip" || log "warn" "Gagal menghapus file zip sementara."
 
@@ -305,9 +377,61 @@ list_websites() {
     fi
 }
 
+update_semua_situs() {
+    log "header" "MEMPERBARUI WORDPRESS CORE, PLUGIN & TEMA"
+    local sites_dir="/etc/nginx/sites-enabled"
+    local sites_found=0
+
+    if [ ! -d "$sites_dir" ] || [ -z "$(ls -A "$sites_dir")" ]; then
+        log "warn" "Tidak ada website yang ditemukan untuk diperbarui."
+        return
+    fi
+
+    for site_symlink in "$sites_dir"/*; do
+        local domain=$(basename "$site_symlink")
+        if [[ "$domain" == "default" ]]; then
+            continue
+        fi
+        
+        sites_found=$((sites_found + 1))
+        echo -e "\n${C_BOLD}${C_CYAN}🔎 Memproses situs: $domain${C_RESET}"
+
+        local nginx_conf="/etc/nginx/sites-available/$domain"
+        if [ ! -f "$nginx_conf" ]; then
+            log "warn" "File konfigurasi untuk '$domain' tidak ditemukan di sites-available. Melewati."
+            continue
+        fi
+
+        local web_root
+        web_root=$(grep -oP '^\s*root\s+\K[^;]+' "$nginx_conf" | head -n 1)
+        
+        if [ -z "$web_root" ] || [ ! -d "$web_root" ]; then
+            log "warn" "Direktori root untuk '$domain' tidak ditemukan atau tidak valid. Melewati."
+            continue
+        fi
+        
+        if [ ! -f "$web_root/wp-config.php" ]; then
+            log "warn" "Instalasi WordPress tidak ditemukan di '$web_root'. Melewati."
+            continue
+        fi
+
+        log "info" "Path terdeteksi: $web_root"
+        run_task "Memperbarui inti WordPress (Core) untuk '$domain'" sudo -u www-data wp core update --path="$web_root"
+        run_task "Memperbarui semua plugin untuk '$domain'" sudo -u www-data wp plugin update --all --path="$web_root"
+        run_task "Memperbarui semua tema untuk '$domain'" sudo -u www-data wp theme update --all --path="$web_root"
+    done
+
+    if [ "$sites_found" -eq 0 ]; then
+        log "warn" "Tidak ada website WordPress yang dikonfigurasi yang ditemukan."
+    else
+        log "success" "Proses pembaruan untuk semua situs telah selesai."
+    fi
+}
+
 delete_website() {
-    log "header" "HAPUS WEBSITE (DENGAN DETEKSI PATH OTOMATIS)"
-    read -p "Masukkan nama domain yang ingin dihapus (contoh: domainanda.com): " domain
+    log "header" "HAPUS WEBSITE"
+    local domain
+    prompt_input "Nama domain yang akan dihapus" domain
     if [ -z "$domain" ]; then
         log "warn" "Nama domain kosong. Operasi dibatalkan."
         return
@@ -329,12 +453,14 @@ delete_website() {
         web_root=$(dirname "$web_root")
     fi
     
-    local dbname=$(echo "$domain" | tr '.' '_' | cut -c1-16)_wp
-    local dbuser=$(echo "$domain" | tr '.' '_' | cut -c1-16)_usr
+    local dbname=$(generate_db_credentials "$domain" "_wp")
+    local dbuser=$(generate_db_credentials "$domain" "_usr")
 
     log "warn" "Anda akan menghapus SEMUA data untuk domain '$domain' secara permanen."
-    log "warn" "Tindakan ini tidak dapat dibatalkan. Direktori ${web_root} dan database ${dbname} akan dihapus."
-    read -p "Apakah Anda benar-benar yakin? (y/N): " confirmation
+    log "warn" "Direktori ${web_root} dan database ${dbname} juga akan dihapus."
+    
+    local confirmation
+    read -p "$(echo -e ${C_BOLD}${C_YELLOW}'❓ Apakah Anda benar-benar yakin? Tindakan ini tidak dapat dibatalkan. (y/N): '${C_RESET})" confirmation
 
     if [[ ! "$confirmation" =~ ^[Yy]$ ]]; then
         log "info" "Operasi penghapusan dibatalkan."
@@ -364,35 +490,41 @@ delete_website() {
 show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}=========================================================="
-    echo "         🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀      "
+    echo "                🚀 SCRIPT MANAJEMEN WORDPRESS OTOMATIS 🚀         "
     echo "=========================================================="
     echo -e "${C_RESET}"
-    if [ -z "$PRETTY_NAME" ] && [ -f /etc/os-release ]; then source /etc/os-release; PRETTY_NAME=${PRETTY_NAME}; fi
-    echo -e "  OS: ${C_CYAN}${PRETTY_NAME:-Belum Dijalankan}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION:-Belum Dijalankan}${C_RESET}"
+    if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
+        echo -e "  OS: ${C_CYAN}${PRETTY_NAME}${C_RESET} | PHP: ${C_RED}${PHP_VERSION}${C_RESET}"
+    else
+        echo -e "  OS: ${C_CYAN}${PRETTY_NAME}${C_RESET} | PHP: ${C_CYAN}${PHP_VERSION}${C_RESET}"
+    fi
     echo ""
     echo -e "  ${C_GREEN}1. Setup Awal Server (OS & PHP Otomatis) ⚙️${C_RESET}"
     echo -e "  ${C_CYAN}2. Tambah Website WordPress Baru ➕${C_RESET}"
     echo -e "  ${C_YELLOW}3. Lihat Daftar Website Terpasang 📜${C_RESET}"
-    echo -e "  ${C_RED}4. Hapus Website 🗑️${C_RESET}"
-    echo -e "  ${C_BLUE}5. Keluar 🚪${C_RESET}"
+    echo -e "  ${C_MAGENTA}4. Perbarui WordPress, Plugin & Tema 🔄${C_RESET}"
+    echo -e "  ${C_RED}5. Hapus Website 🗑️${C_RESET}"
+    echo -e "  ${C_BLUE}6. Keluar 🚪${C_RESET}"
     echo ""
 }
 
 main() {
     while true; do
         show_menu
-        read -p "Pilih opsi [1-5]: " choice
+        read -p "Pilih opsi [1-6]: " choice
         case $choice in
             1) setup_server ;;
             2) add_website ;;
             3) list_websites ;;
-            4) delete_website ;;
-            5) log "info" "Terima kasih! 👋"; exit 0 ;;
+            4) update_semua_situs ;;
+            5) delete_website ;;
+            6) log "info" "Terima kasih! 👋"; exit 0 ;;
             *) log "warn" "Pilihan tidak valid."; sleep 2 ;;
         esac
         echo
-        read -n 1 -s -r -p "Tekan tombol apapun untuk kembali ke menu..."
+        read -n 1 -s -r -p "$(echo -e "\n${C_CYAN}Tekan tombol apapun untuk kembali ke menu...${C_RESET}")"
     done
 }
 
+detect_os_php
 main
