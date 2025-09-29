@@ -489,7 +489,7 @@ show_menu() {
     clear
     echo -e "${C_BOLD}${C_MAGENTA}"
     echo "=========================================================="
-    echo "                🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀         "
+    echo "          🚀 SCRIPT MANAJEMEN WORDPRESS SUPER 🚀          "
     echo "=========================================================="
     echo -e "${C_RESET}"
     if [[ "$PHP_VERSION" == "Tidak Didukung" ]]; then
