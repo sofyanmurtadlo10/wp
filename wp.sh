@@ -232,7 +232,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name $domain www.$domain;
-    return 301 https://\$domain\$request_uri;
+    return 301 https://$domain\$request_uri;
 }
 server {
     listen 443 ssl http2;
@@ -277,9 +277,9 @@ server {
     }
 
     location ~* \.(jpg|jpeg|gif|png|webp|svg|woff|woff2|ttf|css|js|ico|xml)$ {
-       access_log        off;
-       log_not_found     off;
-       expires           360d;
+       access_log         off;
+       log_not_found      off;
+       expires            360d;
     }
 
     location ~ /\.ht {
