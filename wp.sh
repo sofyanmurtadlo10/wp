@@ -35,7 +35,7 @@ run_task() {
     shift
     local command_args=("$@")
     
-    printf "${C_CYAN}  -> %s... ${C_RESET}" "$description"
+    printf "${C_CYAN}   -> %s... ${C_RESET}" "$description"
     
     output=$("${command_args[@]}" 2>&1)
     local exit_code=$?
@@ -216,11 +216,11 @@ add_website() {
     local ssl_key_path="$ssl_dir/$domain.key"
     
     log "info" "Selanjutnya, editor teks 'nano' akan terbuka untuk Anda."
-    echo -e "${C_YELLOW}  -> Tempelkan konten sertifikat (.crt), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
+    echo -e "${C_YELLOW}   -> Tempelkan konten sertifikat (.crt), lalu simpan (Ctrl+X, Y, Enter).${C_RESET}"
     read -p "   Tekan ENTER untuk melanjutkan..."
     nano "$ssl_cert_path"
     
-    echo -e "${C_YELLOW}  -> Tempelkan konten Kunci Privat (.key), lalu simpan.${C_RESET}"
+    echo -e "${C_YELLOW}   -> Tempelkan konten Kunci Privat (.key), lalu simpan.${C_RESET}"
     read -p "   Tekan ENTER untuk melanjutkan..."
     nano "$ssl_key_path"
 
@@ -265,8 +265,8 @@ server {
         try_files \$uri \$uri/ /index.php\$is_args\$args;
     }
 
-    location ~* /wp-sitemap.*\.xml {
-        try_files \$uri \$uri/ /index.php\$is_args\$args;
+    location ~* /(sitemap_index|wp-sitemap).*\.xml$ {
+        try_files \$uri /index.php\$is_args\$args;
     }
 
     location ~* /wp-config\.php { deny all; }
@@ -321,7 +321,7 @@ EOF
         mapfile -t themes_to_delete <<< "$inactive_themes"
         run_task "Menghapus tema bawaan yang tidak aktif" sudo -u www-data wp theme delete "${themes_to_delete[@]}" --path="$web_root"
     else
-        printf "${C_CYAN}  -> Menghapus tema bawaan yang tidak aktif... ${C_RESET}${C_GREEN}[SKIP]${C_RESET} (Tidak ada)\n"
+        printf "${C_CYAN}   -> Menghapus tema bawaan yang tidak aktif... ${C_RESET}${C_GREEN}[SKIP]${C_RESET} (Tidak ada)\n"
     fi
 
     log "info" "Menginstal plugin-plugin yang dibutuhkan..."
@@ -369,7 +369,7 @@ list_websites() {
     if [ -d "$sites_dir" ] && [ -n "$(ls -A "$sites_dir")" ]; then
         for site in "$sites_dir"/*; do
             if [[ "$(basename "$site")" != "default" ]]; then
-                echo -e "  🌐 ${C_GREEN}$(basename "$site")${C_RESET}"
+                echo -e "   🌐 ${C_GREEN}$(basename "$site")${C_RESET}"
             fi
         done
     else
