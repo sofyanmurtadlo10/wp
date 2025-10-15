@@ -242,6 +242,9 @@ server {
     root $web_root;
     index index.php;
 
+    ssl_certificate $ssl_cert_path;
+    ssl_certificate_key $ssl_key_path;
+
     rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
     rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
     rewrite ^/([a-z]+)?-sitemap\.xsl$ /index.php?xsl=\$1 last;

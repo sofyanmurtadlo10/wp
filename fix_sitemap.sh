@@ -61,7 +61,8 @@ for config_file in "$SITES_DIR"/*; do
 
     sed -i '/location ~\* \/(sitemap_index|wp-sitemap)/,/\}/d' "$config_file"
     
-    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /index index.php;/ { print block; next }' "$config_file"
+    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /index index.php;/ { print block; next } /root .*;/ { if (!printed) { print block; printed=1 } }' "$config_file"
+
     
     echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah diperbarui."
     FIX_COUNT=$((FIX_COUNT + 1))
