@@ -24,7 +24,7 @@ SITEMAP_BLOCK="
     rewrite ^/([a-z]+)?-sitemap\\.xsl\$ /index.php?xsl=\$1 last;
 "
 
-echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP (Aturan Universal) ---${C_RESET}"
+echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP & KONFIGURASI NGINX ---${C_RESET}"
 
 if [ ! -d "$SITES_DIR" ] || [ -z "$(ls -A "$SITES_DIR")" ]; then
     echo -e "${C_YELLOW}PERINGATAN: Direktori '$SITES_DIR' tidak ditemukan atau kosong. Tidak ada yang bisa diperbaiki.${C_RESET}"
@@ -50,12 +50,23 @@ for config_file in "$SITES_DIR"/*; do
         continue
     fi
 
-    if grep -q "rewrite ^/sitemap\\.xml" "$config_file" && grep -q "rewrite ^/sitemap_index\\.xml" "$config_file"; then
-        echo -e "   ${C_GREEN}[OK]${C_RESET} Aturan sitemap universal yang benar sudah ada."
+    CONFIG_IS_OK=true
+    if ! grep -q "rewrite ^/sitemap\\.xml" "$config_file" || ! grep -q "rewrite ^/sitemap_index\\.xml" "$config_file"; then
+        CONFIG_IS_OK=false
+    fi
+    if ! grep -q "access_log /var/log/nginx/$domain/access.log;" "$config_file"; then
+        CONFIG_IS_OK=false
+    fi
+    if ! grep -q "limit_req zone=mylimit" "$config_file"; then
+        CONFIG_IS_OK=false
+    fi
+
+    if $CONFIG_IS_OK; then
+        echo -e "   ${C_GREEN}[OK]${C_RESET} Konfigurasi sudah sesuai standar terbaru."
         continue
     fi
     
-    echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan sitemap tidak lengkap/salah. Memperbarui..."
+    echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Konfigurasi lama terdeteksi. Meng-upgrade..."
     
     cp "$config_file" "${config_file}.bak"
     echo -e "   ${C_BLUE}[INFO]${C_RESET} Cadangan dibuat di ${config_file}.bak"
@@ -66,21 +77,31 @@ for config_file in "$SITES_DIR"/*; do
     sed -i '/rewrite ^\/([^/]+?)-sitemap/d' "$config_file"
     sed -i '/rewrite ^\/([a-z]+)?-sitemap/d' "$config_file"
 
-    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /index index.php;/ { print block; next } /ssl_certificate_key/ { if (!printed) { print block; printed=1 } }' "$config_file"
+    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /ssl_certificate_key/ { if (!printed) { print block; printed=1 } }' "$config_file"
+    
+    if ! grep -q "access_log /var/log/nginx/$domain" "$config_file"; then
+        local log_dir="/var/log/nginx/$domain"
+        mkdir -p "$log_dir"
+        sed -i "/root /a \ \n    access_log $log_dir/access.log;\n    error_log $log_dir/error.log;" "$config_file"
+    fi
 
-    echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah diperbarui."
+    if ! grep -q "limit_req zone=mylimit" "$config_file"; then
+        sed -i '/location \/ {/a \        limit_req zone=mylimit burst=20 nodelay;\n        limit_conn addr 10;' "$config_file"
+    fi
+
+    echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah di-upgrade."
     FIX_COUNT=$((FIX_COUNT + 1))
 done
 
 echo -e "\n${C_BOLD}${C_MAGENTA}--- PROSES SELESAI ---${C_RESET}"
 if [ "$FIX_COUNT" -gt 0 ]; then
-    echo -e "${C_GREEN}✅ Total ${FIX_COUNT} dari ${TOTAL_SITES} konfigurasi situs telah diperbaiki.${C_RESET}"
+    echo -e "${C_GREEN}✅ Total ${FIX_COUNT} dari ${TOTAL_SITES} konfigurasi situs telah diperbaiki/di-upgrade.${C_RESET}"
     echo -e "${C_BLUE}INFO: Menguji konfigurasi Nginx...${C_RESET}"
     
     if nginx -t; then
         echo -e "${C_BLUE}INFO: Konfigurasi valid. Me-reload Nginx untuk menerapkan perubahan...${C_RESET}"
         if systemctl reload nginx; then
-            echo -e "${C_GREEN}SUKSES: Nginx berhasil di-reload. Sitemap Anda seharusnya sudah bisa diakses sekarang!${C_RESET}"
+            echo -e "${C_GREEN}SUKSES: Nginx berhasil di-reload. Konfigurasi baru telah aktif!${C_RESET}"
         else
             echo -e "${C_RED}ERROR: Gagal me-reload Nginx. Cek status layanan dengan 'systemctl status nginx'.${C_RESET}"
         fi

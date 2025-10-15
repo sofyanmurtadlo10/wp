@@ -226,6 +226,9 @@ add_website() {
 
     if [ ! -s "$ssl_cert_path" ] || [ ! -s "$ssl_key_path" ]; then log "error" "File SSL tidak boleh kosong."; fi
 
+    local log_dir="/var/log/nginx/$domain"
+    run_task "Membuat direktori log Nginx" mkdir -p "$log_dir" || log "error"
+
     log "info" "Membuat file konfigurasi Nginx untuk '$domain' langsung di sites-enabled..."
     tee "/etc/nginx/sites-enabled/$domain" > /dev/null <<EOF
 server {
@@ -241,6 +244,9 @@ server {
 
     root $web_root;
     index index.php;
+
+    access_log $log_dir/access.log;
+    error_log $log_dir/error.log;
 
     ssl_certificate $ssl_cert_path;
     ssl_certificate_key $ssl_key_path;
@@ -265,6 +271,8 @@ server {
     gzip_proxied any;
 
     location / {
+        limit_req zone=mylimit burst=20 nodelay;
+        limit_conn addr 10;
         try_files \$uri \$uri/ /index.php\$is_args\$args;
     }
 
@@ -436,6 +444,7 @@ delete_website() {
 
     local nginx_conf="/etc/nginx/sites-enabled/$domain"
     local ssl_dir="/etc/nginx/ssl/$domain"
+    local log_dir="/var/log/nginx/$domain"
     local web_root
     
     if [ -f "$nginx_conf" ]; then
@@ -474,6 +483,7 @@ delete_website() {
     fi
     
     if [ -d "$ssl_dir" ]; then run_task "Menghapus direktori SSL" rm -rf "$ssl_dir"; fi
+    if [ -d "$log_dir" ]; then run_task "Menghapus direktori log" rm -rf "$log_dir"; fi
 
     load_or_create_password
     if mysql -u root -p"$mariadb_unified_pass" -e "USE $dbname;" &>/dev/null; then
