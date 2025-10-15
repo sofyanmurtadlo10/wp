@@ -116,6 +116,22 @@ load_or_create_password() {
     fi
 }
 
+ensure_nginx_limit_req_zone() {
+    local nginx_conf="/etc/nginx/nginx.conf"
+    if [ ! -f "$nginx_conf" ]; then
+        log "warn" "File konfigurasi Nginx utama ($nginx_conf) tidak ditemukan. Melewati pemeriksaan limit_req_zone."
+        return
+    fi
+
+    if ! grep -q "limit_req_zone.*mylimit" "$nginx_conf"; then
+        log "warn" "Konfigurasi limit_req_zone tidak ditemukan. Menambahkan secara otomatis..."
+        if ! run_task "Menambahkan limit_req_zone ke $nginx_conf" \
+            sed -i '/http {/a \    limit_req_zone $binary_remote_addr zone=mylimit:10m rate=10r/s;' "$nginx_conf"; then
+            log "error" "Gagal menambahkan limit_req_zone ke file konfigurasi Nginx."
+        fi
+    fi
+}
+
 setup_server() {
     log "header" "MEMULAI SETUP SERVER"
     log "info" "Menggunakan OS terdeteksi: $PRETTY_NAME"
@@ -156,6 +172,8 @@ setup_server() {
         log "info" "Semua paket inti sudah terinstal."
     fi
 
+    ensure_nginx_limit_req_zone
+
     if ! command -v wp &> /dev/null; then
         run_task "Menginstal WP-CLI" wget -qO /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /usr/local/bin/wp || log "error"
     fi
@@ -189,6 +207,7 @@ add_website() {
     fi
 
     log "header" "TAMBAH WEBSITE WORDPRESS BARU"
+    ensure_nginx_limit_req_zone
     load_or_create_password
     local domain web_root dbname dbuser
     
