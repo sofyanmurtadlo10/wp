@@ -17,7 +17,12 @@ SITES_DIR="/etc/nginx/sites-enabled"
 FIX_COUNT=0
 TOTAL_SITES=0
 
-echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP RANK MATH UNTUK NGINX ---${C_RESET}"
+SITEMAP_BLOCK="
+    location ~* /(sitemap_index|wp-sitemap).*\.xml\$ {
+        try_files \$uri /index.php\$is_args\$args;
+    }"
+
+echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP RANK MATH (v2) ---${C_RESET}"
 
 if [ ! -d "$SITES_DIR" ] || [ -z "$(ls -A "$SITES_DIR")" ]; then
     echo -e "${C_YELLOW}PERINGATAN: Direktori '$SITES_DIR' tidak ditemukan atau kosong. Tidak ada yang bisa diperbaiki.${C_RESET}"
@@ -33,7 +38,7 @@ for config_file in "$SITES_DIR"/*; do
     TOTAL_SITES=$((TOTAL_SITES + 1))
     echo -e "\n${C_CYAN}🔎 Memeriksa Konfigurasi: ${C_BOLD}$domain${C_RESET}"
 
-    if ! grep -q "index.php" "$config_file"; then
+    if ! grep -q "try_files.*index.php" "$config_file"; then
         echo -e "   ${C_YELLOW}[LEWATI]${C_RESET} Sepertinya bukan situs WordPress."
         continue
     fi
@@ -43,21 +48,14 @@ for config_file in "$SITES_DIR"/*; do
         continue
     fi
     
-    if grep -q "location ~\* /wp-sitemap\.\*\\.xml" "$config_file"; then
-        echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan lama ditemukan. Mengganti..."
-        
-        OLD_BLOCK_START="location ~\* /wp-sitemap\.\*\\.xml {"
-        OLD_BLOCK_CONTENT="try_files \\\$uri \\\$uri/ /index.php\\\$is_args\\\$args;"
-        NEW_BLOCK="    location ~\* /(sitemap_index|wp-sitemap).*\.xml\$ {\n        try_files \\\$uri /index.php\\\$is_args\\\$args;\n    }"
+    echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan sitemap tidak ditemukan. Menambahkan..."
+    
+    cp "$config_file" "${config_file}.bak"
 
-        sed -i.bak "s|${OLD_BLOCK_START}|    location ~\* /(sitemap_index|wp-sitemap).*\.xml\$ {|g" "$config_file"
-        sed -i "s|${OLD_BLOCK_CONTENT}|        try_files \\\$uri /index.php\\\$is_args\\\$args;|g" "$config_file"
-
-        echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah diperbarui."
-        FIX_COUNT=$((FIX_COUNT + 1))
-    else
-        echo -e "   ${C_YELLOW}[LEWATI]${C_RESET} Tidak ditemukan blok sitemap yang perlu diperbaiki."
-    fi
+    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /location \/ \{/ { a=1 } a && /\}/ { print block; a=0 }' "$config_file"
+    
+    echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah diperbarui."
+    FIX_COUNT=$((FIX_COUNT + 1))
 done
 
 echo -e "\n${C_BOLD}${C_MAGENTA}--- PROSES SELESAI ---${C_RESET}"
@@ -68,7 +66,7 @@ if [ "$FIX_COUNT" -gt 0 ]; then
     if nginx -t; then
         echo -e "${C_BLUE}INFO: Konfigurasi valid. Me-reload Nginx untuk menerapkan perubahan...${C_RESET}"
         if systemctl reload nginx; then
-            echo -e "${C_GREEN}SUKSES: Nginx berhasil di-reload. Perubahan telah aktif!${C_RESET}"
+            echo -e "${C_GREEN}SUKSES: Nginx berhasil di-reload. Sitemap Anda seharusnya sudah bisa diakses sekarang!${C_RESET}"
         else
             echo -e "${C_RED}ERROR: Gagal me-reload Nginx. Cek status layanan dengan 'systemctl status nginx'.${C_RESET}"
         fi
