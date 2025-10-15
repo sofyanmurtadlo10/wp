@@ -80,8 +80,9 @@ for config_file in "$SITES_DIR"/*; do
     awk -i inplace -v block="$SITEMAP_BLOCK" '1; /ssl_certificate_key/ { if (!printed) { print block; printed=1 } }' "$config_file"
     
     if ! grep -q "access_log /var/log/nginx/$domain" "$config_file"; then
-        mkdir -p "/var/log/nginx/$domain"
-        sed -i "/root /a \ \n    access_log /var/log/nginx/$domain/access.log;\n    error_log /var/log/nginx/$domain/error.log;" "$config_file"
+        log_dir="/var/log/nginx/$domain"
+        mkdir -p "$log_dir"
+        sed -i "/root /a \ \n    access_log $log_dir/access.log;\n    error_log $log_dir/error.log;" "$config_file"
     fi
 
     if ! grep -q "limit_req zone=mylimit" "$config_file"; then
