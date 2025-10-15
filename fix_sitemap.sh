@@ -22,7 +22,7 @@ SITEMAP_BLOCK="
         try_files \$uri /index.php\$is_args\$args;
     }"
 
-echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP RANK MATH (v2) ---${C_RESET}"
+echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP RANK MATH (v3 - Anti Duplikat) ---${C_RESET}"
 
 if [ ! -d "$SITES_DIR" ] || [ -z "$(ls -A "$SITES_DIR")" ]; then
     echo -e "${C_YELLOW}PERINGATAN: Direktori '$SITES_DIR' tidak ditemukan atau kosong. Tidak ada yang bisa diperbaiki.${C_RESET}"
@@ -31,6 +31,11 @@ fi
 
 for config_file in "$SITES_DIR"/*; do
     domain=$(basename "$config_file")
+    
+    if [[ "$config_file" == *.bak ]]; then
+        continue
+    fi
+
     if [[ ! -f "$config_file" ]] || [[ "$domain" == "default" ]]; then
         continue
     fi
@@ -51,6 +56,7 @@ for config_file in "$SITES_DIR"/*; do
     echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan sitemap tidak ditemukan. Menambahkan..."
     
     cp "$config_file" "${config_file}.bak"
+    echo -e "   ${C_BLUE}[INFO]${C_RESET} Cadangan dibuat di ${config_file}.bak"
 
     awk -i inplace -v block="$SITEMAP_BLOCK" '1; /location \/ \{/ { a=1 } a && /\}/ { print block; a=0 }' "$config_file"
     
