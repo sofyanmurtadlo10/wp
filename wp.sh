@@ -240,12 +240,11 @@ server {
     server_name $domain www.$domain;
 
     root $web_root;
-    index index.php index.html index.htm;
+    index index.php;
 
-    ssl_certificate $ssl_cert_path;
-    ssl_certificate_key $ssl_key_path;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers "EECDH+AESGCM:EDH+AESGCM";
+    rewrite ^/sitemap_index\.xml$ /index.php?sitemap=1 last;
+    rewrite ^/([^/]+?)-sitemap([0-9]+)?\.xml$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
+    rewrite ^/([a-z]+)?-sitemap\.xsl$ /index.php?xsl=\$1 last;
 
     add_header Strict-Transport-Security "max-age=63072000" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -263,10 +262,6 @@ server {
 
     location / {
         try_files \$uri \$uri/ /index.php\$is_args\$args;
-    }
-
-    location ~* /(sitemap_index|wp-sitemap).*\.xml\$ {
-        try_files \$uri /index.php\$is_args\$args;
     }
 
     location ~* /wp-config\.php { deny all; }

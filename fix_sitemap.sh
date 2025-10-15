@@ -18,11 +18,12 @@ FIX_COUNT=0
 TOTAL_SITES=0
 
 SITEMAP_BLOCK="
-    location ~* /(sitemap_index|wp-sitemap).*\.xml\$ {
-        try_files \$uri /index.php\$is_args\$args;
-    }"
+    rewrite ^/sitemap_index\\.xml\$ /index.php?sitemap=1 last;
+    rewrite ^/([^/]+?)-sitemap([0-9]+)?\\.xml\$ /index.php?sitemap=\$1&sitemap_n=\$2 last;
+    rewrite ^/([a-z]+)?-sitemap\\.xsl\$ /index.php?xsl=\$1 last;
+"
 
-echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP RANK MATH (v3 - Anti Duplikat) ---${C_RESET}"
+echo -e "${C_BOLD}${C_MAGENTA}--- MEMULAI PERBAIKAN SITEMAP (Aturan Resmi Rank Math) ---${C_RESET}"
 
 if [ ! -d "$SITES_DIR" ] || [ -z "$(ls -A "$SITES_DIR")" ]; then
     echo -e "${C_YELLOW}PERINGATAN: Direktori '$SITES_DIR' tidak ditemukan atau kosong. Tidak ada yang bisa diperbaiki.${C_RESET}"
@@ -48,17 +49,19 @@ for config_file in "$SITES_DIR"/*; do
         continue
     fi
 
-    if grep -q "sitemap_index" "$config_file"; then
-        echo -e "   ${C_GREEN}[OK]${C_RESET} Aturan sitemap yang benar sudah ada."
+    if grep -q "?sitemap=1" "$config_file"; then
+        echo -e "   ${C_GREEN}[OK]${C_RESET} Aturan sitemap Rank Math yang benar sudah ada."
         continue
     fi
     
-    echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan sitemap tidak ditemukan. Menambahkan..."
+    echo -e "   ${C_YELLOW}[MEMPERBAIKI]${C_RESET} Aturan sitemap tidak ditemukan/salah. Memperbarui..."
     
     cp "$config_file" "${config_file}.bak"
     echo -e "   ${C_BLUE}[INFO]${C_RESET} Cadangan dibuat di ${config_file}.bak"
 
-    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /location \/ \{/ { a=1 } a && /\}/ { print block; a=0 }' "$config_file"
+    sed -i '/location ~\* \/(sitemap_index|wp-sitemap)/,/\}/d' "$config_file"
+    
+    awk -i inplace -v block="$SITEMAP_BLOCK" '1; /index index.php;/ { print block; next }' "$config_file"
     
     echo -e "   ${C_GREEN}[SUKSES]${C_RESET} Konfigurasi untuk '$domain' telah diperbarui."
     FIX_COUNT=$((FIX_COUNT + 1))
