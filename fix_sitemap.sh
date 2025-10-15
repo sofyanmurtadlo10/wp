@@ -51,7 +51,7 @@ for config_file in "$SITES_DIR"/*; do
     fi
 
     CONFIG_IS_OK=true
-    if ! grep -q "rewrite ^/sitemap\\.xml" "$config_file" || ! grep -q "rewrite ^/sitemap_index\\.xml" "$config_file"; then
+    if ! grep -q "rewrite ^/sitemap\.xml" "$config_file" || ! grep -q "rewrite ^/sitemap_index\.xml" "$config_file"; then
         CONFIG_IS_OK=false
     fi
     if ! grep -q "access_log /var/log/nginx/$domain/access.log;" "$config_file"; then
@@ -80,7 +80,7 @@ for config_file in "$SITES_DIR"/*; do
     awk -i inplace -v block="$SITEMAP_BLOCK" '1; /ssl_certificate_key/ { if (!printed) { print block; printed=1 } }' "$config_file"
     
     if ! grep -q "access_log /var/log/nginx/$domain" "$config_file"; then
-        local log_dir="/var/log/nginx/$domain"
+        log_dir="/var/log/nginx/$domain"
         mkdir -p "$log_dir"
         sed -i "/root /a \ \n    access_log $log_dir/access.log;\n    error_log $log_dir/error.log;" "$config_file"
     fi
