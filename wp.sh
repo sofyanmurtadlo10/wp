@@ -116,22 +116,6 @@ load_or_create_password() {
     fi
 }
 
-ensure_nginx_limit_req_zone() {
-    local nginx_conf="/etc/nginx/nginx.conf"
-    if [ ! -f "$nginx_conf" ]; then
-        log "warn" "File konfigurasi Nginx utama ($nginx_conf) tidak ditemukan. Melewati pemeriksaan limit_req_zone."
-        return
-    fi
-
-    if ! grep -q "limit_req_zone.*mylimit" "$nginx_conf"; then
-        log "warn" "Konfigurasi limit_req_zone tidak ditemukan. Menambahkan secara otomatis..."
-        if ! run_task "Menambahkan limit_req_zone ke $nginx_conf" \
-            sed -i '/http {/a \    limit_req_zone $binary_remote_addr zone=mylimit:10m rate=10r/s;' "$nginx_conf"; then
-            log "error" "Gagal menambahkan limit_req_zone ke file konfigurasi Nginx."
-        fi
-    fi
-}
-
 setup_server() {
     log "header" "MEMULAI SETUP SERVER"
     log "info" "Menggunakan OS terdeteksi: $PRETTY_NAME"
@@ -172,8 +156,6 @@ setup_server() {
         log "info" "Semua paket inti sudah terinstal."
     fi
 
-    ensure_nginx_limit_req_zone
-
     if ! command -v wp &> /dev/null; then
         run_task "Menginstal WP-CLI" wget -qO /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /usr/local/bin/wp || log "error"
     fi
@@ -207,7 +189,6 @@ add_website() {
     fi
 
     log "header" "TAMBAH WEBSITE WORDPRESS BARU"
-    ensure_nginx_limit_req_zone
     load_or_create_password
     local domain web_root dbname dbuser
     
@@ -290,8 +271,7 @@ server {
     gzip_proxied any;
 
     location / {
-        limit_req zone=mylimit burst=20 nodelay;
-        limit_conn addr 10;
+        # --- BARIS LIMIT REQUEST DAN KONEKSI DIHAPUS DARI SINI ---
         try_files \$uri \$uri/ /index.php\$is_args\$args;
     }
 
@@ -464,24 +444,26 @@ delete_website() {
     local nginx_conf="/etc/nginx/sites-enabled/$domain"
     local ssl_dir="/etc/nginx/ssl/$domain"
     local log_dir="/var/log/nginx/$domain"
-    local web_root
-    
+    local web_root_parent
+
     if [ -f "$nginx_conf" ]; then
-        web_root=$(grep -oP '^\s*root\s+\K[^;]+' "$nginx_conf" | head -n 1)
+        local public_html_path
+        public_html_path=$(grep -oP '^\s*root\s+\K[^;]+' "$nginx_conf" | head -n 1)
+        if [ -n "$public_html_path" ]; then
+            web_root_parent=$(dirname "$public_html_path")
+        fi
     fi
 
-    if [ -z "$web_root" ]; then
+    if [ -z "$web_root_parent" ]; then
         log "warn" "Path root tidak terdeteksi. Menggunakan path standar /var/www/$domain."
-        web_root="/var/www/$domain"
-    else
-        web_root=$(dirname "$web_root")
+        web_root_parent="/var/www/$domain"
     fi
     
     local dbname=$(generate_db_credentials "$domain" "_wp")
     local dbuser=$(generate_db_credentials "$domain" "_usr")
 
     log "warn" "Anda akan menghapus SEMUA data untuk domain '$domain' secara permanen."
-    log "warn" "Direktori ${web_root} dan database ${dbname} juga akan dihapus."
+    log "warn" "Direktori ${web_root_parent} dan database ${dbname} juga akan dihapus."
     
     local confirmation
     read -p "$(echo -e ${C_BOLD}${C_YELLOW}'❓ Apakah Anda benar-benar yakin? Tindakan ini tidak dapat dibatalkan. (y/N): '${C_RESET})" confirmation
@@ -497,8 +479,8 @@ delete_website() {
     fi
     run_task "Me-reload Nginx" systemctl reload nginx
 
-    if [ -d "$web_root" ]; then
-        run_task "Menghapus direktori web '$web_root'" rm -rf "$web_root"
+    if [ -d "$web_root_parent" ]; then
+        run_task "Menghapus direktori web '$web_root_parent'" rm -rf "$web_root_parent"
     fi
     
     if [ -d "$ssl_dir" ]; then run_task "Menghapus direktori SSL" rm -rf "$ssl_dir"; fi
