@@ -271,7 +271,6 @@ server {
     gzip_proxied any;
 
     location / {
-        # --- BARIS LIMIT REQUEST DAN KONEKSI DIHAPUS DARI SINI ---
         try_files \$uri \$uri/ /index.php\$is_args\$args;
     }
 
